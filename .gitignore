@@ -16,7 +16,6 @@ dist-ssr
 venv/
 __pycache__/
 *.py[cod]
-*.pyc.*
 debug_playwright/
 backend/uploads/
 backend/generated_documents/

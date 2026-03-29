@@ -1,0 +1,9 @@
+Document ID: DOC-013
+Date: 2026-03-13
+
+SOFTWARE DEVELOPMENT SERVICES AGREEMENT
+1. Scope of Work: The Developer agrees to develop software as requested by the Client in Annexure A.
+2. Payment: The Client shall pay the Developer according to the milestone schedule.
+3. Intellectual Property: All intellectual property rights in the software produced shall belong exclusively to the Client upon full payment.
+4. Liability: Developer's liability shall not exceed the total amount paid by the Client.
+5. Governing Law: This contract is governed by Indian law.

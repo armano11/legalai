@@ -1,0 +1,36 @@
+
+============================================================
+Testing Query: Business partnership dispute involving unauthorized fund transfers and embezzlement
+============================================================
+
+[1] RAG Search Results:
+Source: llm_fallback
+Total Results: 1
+
+[2] Matched IPC Sections:
+- Section 409: Criminal Breach of Trust by public servant, or by banker, merchant or agent (serious)
+- Section 408: Criminal Breach of Trust by Clerk or Servant (serious)
+
+[3] Synthesis Preview (First 200 chars):
+Based on the details provided, this matter involves legal proceedings under Indian law. A detailed analysis requires examining the specific facts, applicable statutory provisions, and relevant case la...
+
+[✓] Results seem relevant at a quick glance.
+
+============================================================
+Testing Query: Property tenant dispute for non-payment of rent
+============================================================
+
+[1] RAG Search Results:
+Source: llm_fallback
+Total Results: 1
+
+[2] Matched IPC Sections:
+- Section 408: Criminal Breach of Trust by Clerk or Servant (serious)
+- Section 409: Criminal Breach of Trust by public servant, or by banker, merchant or agent (serious)
+- Section 403: Dishonest Misappropriation of Property (moderate)
+- Section 405: Criminal Breach of Trust (moderate)
+
+[3] Synthesis Preview (First 200 chars):
+Based on the details provided, this matter involves legal proceedings under Indian law. The matter involves property law. Relevant laws include Transfer of Property Act 1882, Rent Control Acts, and Re...
+
+[✓] Results seem relevant at a quick glance.

@@ -1,9 +1,11 @@
 import re
 import os
 import logging
+import contextlib
 import pdfplumber
 from docx import Document as DocxDocument
 from PIL import Image
+from config import LEGAL_PAPER_ENABLE_NEURAL_AUDIT, LEGAL_PAPER_NEURAL_TIMEOUT_SECONDS
 try:
     import easyocr
     import numpy as np
@@ -15,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Global OCR Reader (Lazy Loaded)
 _ocr_reader = None
+
+MONTH_PATTERN = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+)
 
 def get_ocr_reader():
     global _ocr_reader
@@ -29,13 +36,13 @@ def get_ocr_reader():
 # ------- Document type detection patterns -------
 DOC_TYPE_PATTERNS = {
     "FIR": [r"first information report", r"\bfir\b", r"police station", r"station house officer", r"cognizable offence"],
-    "Contract": [r"agreement", r"contract", r"parties hereto", r"witnesseth", r"terms and conditions", r"obligations"],
-    "Petition": [r"petition", r"petitioner", r"respondent", r"honourable court", r"humbly prays", r"writ petition", r"slp", r"special leave"],
+    "Contract": [r"agreement", r"contract", r"parties hereto", r"witnesseth", r"terms and conditions", r"obligations", r"this agreement is made", r"whereas"],
+    "Petition": [r"petition", r"petitioner", r"respondent", r"honourable court", r"humbly prays", r"writ petition", r"slp", r"special leave", r"most respectfully showeth"],
     "Affidavit": [r"affidavit", r"solemnly affirm", r"deponent", r"sworn before", r"notary public", r"oath"],
-    "Legal Notice": [r"legal notice", r"notice is hereby", r"advocate", r"under instructions", r"failing which"],
+    "Legal Notice": [r"legal notice", r"notice is hereby", r"advocate", r"under instructions", r"failing which", r"call upon you", r"take notice"],
     "Power of Attorney": [r"power of attorney", r"attorney", r"authorize", r"irrevocable", r"principal"],
     "Will/Testament": [r"last will", r"testament", r"bequeath", r"estate", r"executor", r"probate"],
-    "Court Order": [r"order", r"court", r"directed", r"judgment", r"decreed", r"disposed"],
+    "Court Order": [r"order", r"court", r"directed", r"judgment", r"decreed", r"disposed", r"it is ordered", r"the following order"],
     "Lease/Rental": [r"lease", r"rental", r"landlord", r"tenant", r"rent", r"premises"],
     "Sale Deed": [r"sale deed", r"conveyance", r"vendor", r"vendee", r"consideration", r"schedule of property", r"absolute owner"],
     "Mortgage Deed": [r"mortgage", r"mortgagor", r"mortgagee", r"loan", r"security", r"hypothecation"],
@@ -131,9 +138,12 @@ def extract_text(file_path: str) -> str:
         elif ext == ".docx":
             doc = DocxDocument(file_path)
             text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-        elif ext == ".txt":
+        elif ext in [".txt", ".md"]:
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
+        elif ext == ".rtf":
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = strip_rtf_basic(f.read())
         elif ext in [".jpg", ".jpeg", ".png"]:
             reader = get_ocr_reader()
             if reader:
@@ -151,6 +161,57 @@ def extract_text(file_path: str) -> str:
     return text.strip()
 
 
+def normalize_extracted_text(text: str) -> str:
+    """Clean OCR noise and normalize whitespace for downstream analysis."""
+    if not text:
+        return ""
+
+    text = text.replace("\u2014", "-").replace("\u2013", "-").replace("\u2019", "'")
+    text = text.replace("â€”", "-").replace("â€“", "-").replace("â€˜", "'").replace("â€™", "'")
+    text = text.replace("â‚¹", "Rs. ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"([A-Za-z])-\n([A-Za-z])", r"\1\2", text)
+    text = re.sub(r"(?<=\w)\n(?=\w)", " ", text)
+    return text.strip()
+
+
+def strip_rtf_basic(rtf_text: str) -> str:
+    """Basic RTF to text fallback without external dependencies."""
+    text = re.sub(r"\\'[0-9a-fA-F]{2}", " ", rtf_text)
+    text = re.sub(r"\\[a-zA-Z]+\d* ?", " ", text)
+    text = text.replace("{", " ").replace("}", " ")
+    return normalize_extracted_text(text)
+
+
+def split_sentences(text: str) -> list:
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+|\n+', text) if s.strip()]
+
+
+def extract_document_profile(text: str) -> dict:
+    """Create lightweight document profile metrics used across the engine."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    sentences = split_sentences(text)
+    heading_lines = [
+        line for line in lines
+        if 4 <= len(line) <= 120 and (
+            line.isupper()
+            or re.match(r"^(clause|section|article|schedule|annexure|facts|prayer|order|notice)\b", line, re.IGNORECASE)
+            or line.endswith(":")
+        )
+    ]
+    digit_density = round(sum(ch.isdigit() for ch in text) / max(len(text), 1), 4)
+
+    return {
+        "line_count": len(lines),
+        "paragraph_count": len([p for p in re.split(r"\n\s*\n", text) if p.strip()]),
+        "sentence_count": len(sentences),
+        "heading_count": len(heading_lines[:50]),
+        "digit_density": digit_density,
+        "uppercase_heading_ratio": round(len(heading_lines) / max(len(lines), 1), 3),
+    }
+
+
 def detect_document_type(text: str) -> dict:
     """Detect the type of legal document."""
     text_lower = text.lower()
@@ -166,6 +227,33 @@ def detect_document_type(text: str) -> dict:
     best = max(scores, key=scores.get)
     confidence = min(100, scores[best] * 25)
     return {"type": best, "confidence": confidence}
+
+
+def infer_document_purpose(doc_type_name: str, text: str) -> str:
+    """Infer the practical purpose of the legal paper."""
+    purpose_map = {
+        "FIR": "To formally report an alleged cognizable offence and trigger criminal investigation.",
+        "Contract": "To define binding commercial rights, duties, payment terms, liability, and remedies between parties.",
+        "Petition": "To place facts, legal grounds, and prayers before a court or authority for adjudication.",
+        "Affidavit": "To place sworn facts on record for evidentiary or procedural use.",
+        "Legal Notice": "To formally assert rights, state breach or grievance, and demand corrective action before escalation.",
+        "Power of Attorney": "To delegate legal or commercial authority from a principal to an attorney.",
+        "Will/Testament": "To record testamentary intent and distribution of estate after death.",
+        "Court Order": "To record directions, findings, or operative relief issued by a judicial authority.",
+        "Lease/Rental": "To govern possession, rent, obligations, and termination concerning premises.",
+        "Sale Deed": "To document transfer of title and consideration for immovable property.",
+        "Mortgage Deed": "To secure repayment obligations against identified property or assets.",
+        "Gift Deed": "To record voluntary transfer without consideration.",
+        "Indemnity Bond": "To allocate reimbursement responsibility for defined loss scenarios.",
+        "Board Resolution": "To formally evidence board approval and authority for corporate action.",
+    }
+    if doc_type_name in purpose_map:
+        return purpose_map[doc_type_name]
+
+    first_chunk = " ".join(text.split()[:45])
+    if first_chunk:
+        return f"To create a formal legal record concerning: {first_chunk[:260]}."
+    return "To create a formal legal record with legal or procedural effect."
 
 
 def extract_entities(text: str) -> dict:
@@ -212,6 +300,60 @@ def extract_entities(text: str) -> dict:
     # Deduplicate
     for key in entities:
         entities[key] = list(set(entities[key]))[:10]
+
+    return entities
+
+
+def extract_entities_v2(text: str) -> dict:
+    """Improved entity extraction with better date, amount, party, and address coverage."""
+    entities = {
+        "parties": [],
+        "dates": [],
+        "amounts": [],
+        "addresses": [],
+        "sections_cited": []
+    }
+
+    date_patterns = [
+        r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}",
+        rf"\d{{1,2}}\s+{MONTH_PATTERN},?\s+\d{{4}}",
+        rf"{MONTH_PATTERN}\s+\d{{1,2}},?\s+\d{{4}}",
+        rf"\d{{1,2}}(?:st|nd|rd|th)?\s+day of\s+{MONTH_PATTERN},?\s+\d{{4}}",
+    ]
+    for pattern in date_patterns:
+        entities["dates"].extend(re.findall(pattern, text, re.IGNORECASE))
+
+    amount_patterns = [
+        r"(?:Rs\.?|₹|INR)\s*[\d,]+(?:\.\d{1,2})?(?:\s*(?:lakh|crore|lakhs|crores|million|billion))?",
+        r"[\d,]+(?:\.\d{1,2})?\s*(?:rupees|lakh|lakhs|crore|crores|million|billion)",
+        r"(?:USD|EUR|GBP|\$)\s*[\d,]+(?:\.\d{1,2})?",
+    ]
+    for pattern in amount_patterns:
+        entities["amounts"].extend(re.findall(pattern, text, re.IGNORECASE))
+
+    sections = SECTION_PATTERN.findall(text)
+    entities["sections_cited"] = [f"Section {s}" for s in set(sections)]
+
+    party_patterns = [
+        r"(?:between|among)\s+([A-Z][a-zA-Z&.,\s]+?)(?:\s+and\s+|\s+hereinafter)",
+        r"(?:Mr\.|Mrs\.|Ms\.|Shri|Smt\.)\s+[A-Z][a-zA-Z\s]+",
+        r"(?:complainant|petitioner|plaintiff|respondent|defendant|accused|claimant|appellant)[:\-–—]\s*([A-Z][a-zA-Z&.,\s]+)",
+        r"(?:this\s+agreement\s+is\s+made\s+between)\s+([A-Z][a-zA-Z&.,\s]+?)(?:\s+and\s+)",
+    ]
+    for pattern in party_patterns:
+        found = re.findall(pattern, text, re.IGNORECASE)
+        entities["parties"].extend([p.strip(" ,.-") for p in found if len(p.strip()) > 3])
+
+    address_patterns = [
+        r"(?:address|residing at|located at|office at)[:\-]?\s*([A-Za-z0-9,.\-\/\s]{15,120})",
+        r"\b(?:flat|plot|survey|door|house)\s+no\.?\s*[A-Za-z0-9\-\/, ]{6,100}",
+    ]
+    for pattern in address_patterns:
+        found = re.findall(pattern, text, re.IGNORECASE)
+        entities["addresses"].extend([addr.strip(" ,.-") for addr in found if isinstance(addr, str)])
+
+    for key in entities:
+        entities[key] = list(dict.fromkeys(entities[key]))[:12]
 
     return entities
 
@@ -326,6 +468,160 @@ def assess_language_quality(text: str) -> dict:
     }
 
 
+def check_completeness_v2(text: str, doc_type: str, entities: dict) -> dict:
+    """Improved completeness scoring using concept-level synonyms."""
+    checklist = COMPLETENESS_CHECKLIST.get(doc_type, COMPLETENESS_CHECKLIST.get("Contract", []))
+    text_lower = text.lower()
+
+    concept_map = {
+        "Parties Identified": [bool(entities.get("parties")), "between" in text_lower, "party" in text_lower],
+        "Effective Date": [bool(entities.get("dates")), "effective date" in text_lower, "dated" in text_lower],
+        "Obligations/Terms": ["shall" in text_lower, "obligation" in text_lower, "agree" in text_lower],
+        "Payment Terms": [bool(entities.get("amounts")), "payment" in text_lower, "consideration" in text_lower, "fee" in text_lower],
+        "Duration/Term": ["term" in text_lower, "period" in text_lower, "commence" in text_lower, "expire" in text_lower],
+        "Termination Clause": ["termination" in text_lower, "terminate" in text_lower, "cancel" in text_lower],
+        "Governing Law": ["governing law" in text_lower, "jurisdiction" in text_lower, "arbitration" in text_lower],
+        "Signatures": ["signature" in text_lower, "signed" in text_lower, "seal" in text_lower, "witness whereof" in text_lower],
+        "Date and Time of Incident": ["date" in text_lower and ("time" in text_lower or "at about" in text_lower)],
+        "Place of Occurrence": ["place of occurrence" in text_lower, "occurred at" in text_lower, bool(entities.get("addresses"))],
+        "Complainant Details": ["complainant" in text_lower, "informant" in text_lower],
+        "Accused Details": ["accused" in text_lower, "suspect" in text_lower],
+        "Facts/Narrative": ["facts" in text_lower, "brief facts" in text_lower, len(split_sentences(text)) >= 5],
+        "Section References": [bool(entities.get("sections_cited"))],
+        "Witnesses": ["witness" in text_lower],
+        "Petitioner Details": ["petitioner" in text_lower, "applicant" in text_lower],
+        "Respondent Details": ["respondent" in text_lower, "opposite party" in text_lower],
+        "Court Named": ["court" in text_lower, "tribunal" in text_lower, "hon'ble" in text_lower],
+        "Prayer/Relief Sought": ["prayer" in text_lower, "relief" in text_lower, "it is prayed" in text_lower],
+        "Verification/Affidavit": ["verification" in text_lower, "affidavit" in text_lower],
+        "Deponent Name": ["deponent" in text_lower, "ponent" in text_lower],
+        "Sworn Statement": ["solemnly affirm" in text_lower, "sworn" in text_lower, "affirm" in text_lower],
+        "Notary/Magistrate": ["notary" in text_lower, "magistrate" in text_lower, "oath commissioner" in text_lower],
+        "Facts Stated": ["facts stated" in text_lower, len(split_sentences(text)) >= 4],
+        "Sender Details": ["from:" in text_lower, "sender" in text_lower, "through advocate" in text_lower],
+        "Recipient Details": ["to," in text_lower, "recipient" in text_lower, "addressee" in text_lower],
+        "Subject": ["subject:" in text_lower],
+        "Demand/Relief": ["demand" in text_lower, "relief" in text_lower, "call upon you" in text_lower],
+        "Time Limit": ["within" in text_lower and "days" in text_lower, "failing which" in text_lower],
+        "Advocate Details": ["advocate" in text_lower, "counsel" in text_lower],
+        "Landlord Details": ["landlord" in text_lower, "lessor" in text_lower],
+        "Tenant Details": ["tenant" in text_lower, "lessee" in text_lower],
+        "Property Address": [bool(entities.get("addresses")), "premises" in text_lower, "property" in text_lower],
+        "Rent Amount": [bool(entities.get("amounts")), "rent" in text_lower],
+        "Security Deposit": ["security deposit" in text_lower, "deposit" in text_lower],
+        "Vendor Details": ["vendor" in text_lower, "seller" in text_lower],
+        "Vendee Details": ["vendee" in text_lower, "purchaser" in text_lower, "buyer" in text_lower],
+        "Property Description": ["schedule of property" in text_lower, "property description" in text_lower, bool(entities.get("addresses"))],
+        "Sale Consideration": ["sale consideration" in text_lower, bool(entities.get("amounts"))],
+        "Payment Mode": ["payment mode" in text_lower, "paid by" in text_lower, "bank transfer" in text_lower, "cheque" in text_lower],
+        "Possession Clause": ["possession" in text_lower],
+        "Encumbrance Certificate": ["encumbrance" in text_lower],
+        "Mortgagor Details": ["mortgagor" in text_lower, "borrower" in text_lower],
+        "Mortgagee Details": ["mortgagee" in text_lower, "lender" in text_lower, "bank" in text_lower],
+        "Loan Amount": [bool(entities.get("amounts")), "loan amount" in text_lower],
+        "Interest Rate": ["interest rate" in text_lower, "interest" in text_lower],
+        "Property Security": ["security" in text_lower, "collateral" in text_lower, "mortgaged property" in text_lower],
+        "Default Terms": ["default" in text_lower, "event of default" in text_lower],
+        "Repayment Schedule": ["repayment" in text_lower, "installment" in text_lower, "emi" in text_lower],
+        "Donor Details": ["donor" in text_lower],
+        "Donee Details": ["donee" in text_lower],
+        "Acceptance Clause": ["accepted" in text_lower, "acceptance" in text_lower],
+        "No Consideration Clause": ["without consideration" in text_lower, "love and affection" in text_lower],
+        "Meeting Date": [bool(entities.get("dates")), "meeting held on" in text_lower],
+        "Resolution Number": ["resolution no" in text_lower, "resolution number" in text_lower],
+        "Authorized Signatory": ["authorized signatory" in text_lower, "authorised signatory" in text_lower],
+        "Directors Attending": ["directors present" in text_lower, "board of directors" in text_lower],
+        "Clear Action/Authority": ["resolved that" in text_lower, "authorized to" in text_lower],
+    }
+
+    results = []
+    found = 0
+    for item in checklist:
+        signals = concept_map.get(item, [item.lower() in text_lower])
+        present = any(bool(signal) for signal in signals)
+        results.append({"item": item, "present": present})
+        if present:
+            found += 1
+
+    score = round((found / len(checklist)) * 100) if checklist else 0
+    return {"score": score, "checklist": results, "total": len(checklist), "found": found}
+
+
+def extract_core_obligations(text: str, doc_type_name: str, max_items: int = 6) -> list:
+    """Extract likely obligation-style sentences from legal text."""
+    candidates = []
+    obligation_markers = [
+        "shall", "must", "agrees to", "is required to", "undertakes to",
+        "will be liable", "shall pay", "shall deliver", "shall provide",
+        "is entitled to", "shall maintain", "shall not", "may terminate"
+    ]
+    for sentence in split_sentences(text):
+        lowered = sentence.lower()
+        if len(sentence.split()) < 6 or len(sentence.split()) > 45:
+            continue
+        if any(marker in lowered for marker in obligation_markers):
+            candidates.append(sentence.strip())
+
+    deduped = []
+    seen = set()
+    for sentence in candidates:
+        key = sentence.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sentence)
+
+    if not deduped and doc_type_name in {"Petition", "Affidavit", "Legal Notice", "Court Order"}:
+        deduped = split_sentences(text)[:max_items]
+
+    return deduped[:max_items]
+
+
+def build_issue_profile(text: str, doc_type_name: str, entities: dict, risk_clauses: list, completeness: dict, language: dict) -> dict:
+    """Summarize the engine's view of the document in issue clusters."""
+    profile = {
+        "document_focus": infer_document_purpose(doc_type_name, text),
+        "risk_posture": "balanced",
+        "principal_concerns": [],
+    }
+
+    if any(r.get("severity") == "critical" for r in risk_clauses):
+        profile["risk_posture"] = "critical"
+    elif any(r.get("severity") == "high" for r in risk_clauses):
+        profile["risk_posture"] = "elevated"
+    elif completeness.get("score", 0) < 70:
+        profile["risk_posture"] = "incomplete"
+
+    if not entities.get("parties"):
+        profile["principal_concerns"].append("Party identification is weak or not clearly extractable.")
+    if not entities.get("dates"):
+        profile["principal_concerns"].append("Timeline signals are weak, which may create procedural or performance ambiguity.")
+    if completeness.get("score", 0) < 75:
+        profile["principal_concerns"].append("Several expected structural elements appear missing.")
+    if language.get("issues"):
+        profile["principal_concerns"].append("Drafting quality issues may reduce clarity or enforceability.")
+    if risk_clauses:
+        profile["principal_concerns"].append(f"{len(risk_clauses)} clause pattern(s) were flagged for legal review.")
+
+    if not profile["principal_concerns"]:
+        profile["principal_concerns"].append("No major engine-level concern dominates the document; remaining review is mostly clause calibration.")
+
+    return profile
+
+
+def calculate_analysis_confidence(doc_type: dict, profile: dict, entities: dict, completeness: dict) -> int:
+    """Estimate engine confidence based on extraction richness and structure quality."""
+    score = 35
+    score += min(25, doc_type.get("confidence", 0) // 2)
+    score += min(15, len(entities.get("parties", [])) * 3)
+    score += min(10, len(entities.get("dates", [])) * 2)
+    score += min(10, len(entities.get("sections_cited", [])) * 2)
+    score += min(15, completeness.get("score", 0) // 8)
+    if profile.get("risk_posture") == "critical":
+        score -= 5
+    return max(20, min(100, score))
+
+
 def generate_summary(text: str, max_sentences: int = 5) -> str:
     """Extract key sentences as summary."""
     sentences = [s.strip() for s in re.split(r'[.!?]+', text) if len(s.strip()) > 20]
@@ -351,6 +647,232 @@ def generate_summary(text: str, max_sentences: int = 5) -> str:
     ordered = [s for s in sentences if s in top_sents][:max_sentences]
 
     return ". ".join(ordered) + "." if ordered else "Unable to generate summary."
+
+
+def build_section_breakdown(text: str, doc_type_name: str) -> list:
+    """Build a readable section-by-section breakdown from headings or strong paragraphs."""
+    candidates = []
+    seen = set()
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if len(line) < 8:
+            continue
+        if len(line) > 110:
+            continue
+        alpha_count = sum(1 for ch in line if ch.isalpha())
+        if alpha_count < 5:
+            continue
+        if line.lower() in seen:
+            continue
+
+        is_heading = (
+            line.isupper()
+            or re.match(r"^(section|clause|article|schedule|part|chapter|annexure|prayer|facts|background)\b", line, re.IGNORECASE)
+            or raw_line.endswith(":")
+        )
+        if is_heading:
+            seen.add(line.lower())
+            candidates.append(line)
+
+    if not candidates:
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if len(p.strip()) > 80]
+        for idx, paragraph in enumerate(paragraphs[:6], start=1):
+            snippet = " ".join(paragraph.split()[:28]).strip()
+            candidates.append(f"Section {idx}: {snippet}")
+
+    breakdown = []
+    for idx, heading in enumerate(candidates[:6], start=1):
+        pattern = re.escape(heading)
+        match = re.search(pattern, text, re.IGNORECASE)
+        excerpt = ""
+        if match:
+            start = match.end()
+            excerpt = " ".join(text[start:start + 320].split())
+        if not excerpt:
+            excerpt = " ".join(heading.split()[:20])
+
+        breakdown.append({
+            "title": heading[:100],
+            "summary": excerpt[:240] if excerpt else f"Relevant {doc_type_name.lower()} section identified for review."
+        })
+
+    return breakdown[:6]
+
+
+def build_strengths(
+    doc_type_name: str,
+    completeness: dict,
+    language: dict,
+    entities: dict,
+    risk_clauses: list
+) -> list:
+    strengths = []
+
+    if completeness.get("score", 0) >= 85:
+        strengths.append("The document covers most of the core structural elements typically expected for this document type.")
+    if entities.get("parties"):
+        strengths.append("The parties are identifiable from the text, which supports traceability and enforceability.")
+    if entities.get("dates"):
+        strengths.append("Key dates or timelines are present, reducing ambiguity around chronology and obligations.")
+    if language.get("score", 0) >= 80:
+        strengths.append("Drafting quality is relatively clear and disciplined, which improves interpretability.")
+    if not any(r.get("severity") in {"critical", "high"} for r in risk_clauses):
+        strengths.append("No immediately severe clause pattern was detected, suggesting a more balanced risk profile.")
+    if entities.get("sections_cited"):
+        strengths.append("Statutory references are present, which may strengthen the document's legal framing.")
+
+    if not strengths:
+        strengths.append(f"The {doc_type_name.lower()} contains enough extracted content to support a structured legal review.")
+
+    return strengths[:5]
+
+
+def build_weak_points(
+    doc_type_name: str,
+    completeness: dict,
+    language: dict,
+    entities: dict,
+    risk_clauses: list
+) -> list:
+    weak_points = []
+
+    for risk in risk_clauses[:5]:
+        weak_points.append({
+            "title": risk["clause"],
+            "severity": risk["severity"],
+            "issue": risk["detail"],
+            "impact": f"This clause can materially affect bargaining power, liability allocation, or enforceability in the {doc_type_name.lower()}."
+        })
+
+    missing_items = [item["item"] for item in completeness.get("checklist", []) if not item.get("present")]
+    for item in missing_items[:3]:
+        weak_points.append({
+            "title": f"Missing {item}",
+            "severity": "medium",
+            "issue": f"The document appears to lack a clear {item.lower()}.",
+            "impact": "Missing core drafting elements can create interpretation disputes, procedural weakness, or proof gaps."
+        })
+
+    for issue in language.get("issues", [])[:2]:
+        weak_points.append({
+            "title": issue["issue"],
+            "severity": "medium",
+            "issue": issue["detail"],
+            "impact": "Poor drafting quality can create uncertainty, make obligations harder to prove, and weaken negotiations."
+        })
+
+    if not entities.get("parties"):
+        weak_points.append({
+            "title": "Unclear party identification",
+            "severity": "high",
+            "issue": "The document does not clearly expose identifiable parties from extraction.",
+            "impact": "That can create a fundamental enforceability problem and uncertainty over who is bound."
+        })
+
+    if not entities.get("dates"):
+        weak_points.append({
+            "title": "Missing clear timeline",
+            "severity": "medium",
+            "issue": "No clear date or timing signal was extracted.",
+            "impact": "Timeline ambiguity weakens performance tracking, limitation analysis, and notice requirements."
+        })
+
+    return weak_points[:8]
+
+
+def build_fixing_solutions(weak_points: list) -> list:
+    solutions = []
+
+    for point in weak_points:
+        title = point.get("title", "Document issue")
+        severity = point.get("severity", "medium")
+        title_lower = title.lower()
+
+        if "indemn" in title_lower:
+            fix = "Cap indemnity exposure, define claim procedure, exclude indirect losses, and tie liability to fault or breach."
+        elif "termination" in title_lower:
+            fix = "Add notice periods, cure rights, objective termination triggers, and post-termination obligations."
+        elif "liability" in title_lower or "damages" in title_lower:
+            fix = "Introduce a liability cap, carve-outs, mitigation language, and a clear damages methodology."
+        elif "part" in title_lower:
+            fix = "Insert full legal names, addresses, roles, and signature identifiers for every party."
+        elif "date" in title_lower or "timeline" in title_lower:
+            fix = "Add effective date, execution date, milestone dates, and notice timelines in a dedicated chronology section."
+        elif "language" in title_lower or "ambiguous" in title_lower or "sentence" in title_lower:
+            fix = "Rewrite long or vague clauses into short obligation-focused statements with defined terms."
+        elif "governing law" in title_lower or "dispute" in title_lower or "arbitration" in title_lower:
+            fix = "Clarify forum, seat, governing law, notice mechanics, and escalation before dispute filing."
+        else:
+            fix = "Redraft this section with precise definitions, objective triggers, balanced obligations, and a review by counsel before execution."
+
+        solutions.append({
+            "issue": title,
+            "priority": "Immediate" if severity in {"critical", "high"} else "Recommended",
+            "solution": fix
+        })
+
+    deduped = []
+    seen = set()
+    for item in solutions:
+        key = item["issue"].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    return deduped[:6]
+
+
+def build_recommended_actions(
+    doc_type_name: str,
+    risk_clauses: list,
+    completeness: dict,
+    entities: dict
+) -> list:
+    actions = []
+
+    if any(r.get("severity") in {"critical", "high"} for r in risk_clauses):
+        actions.append("Escalate the flagged high-risk clauses for advocate review before signature, filing, or service.")
+    if completeness.get("score", 0) < 75:
+        actions.append("Complete missing structural components before relying on this document in negotiation or proceedings.")
+    if not entities.get("parties") or not entities.get("dates"):
+        actions.append("Normalize party and timeline details into a dedicated front section to remove ambiguity.")
+    if doc_type_name in {"Contract", "Lease/Rental", "Sale Deed", "Mortgage Deed", "Gift Deed"}:
+        actions.append("Run a commercial terms review to confirm payment triggers, liability allocation, and dispute mechanics.")
+    if doc_type_name in {"Petition", "Affidavit", "Legal Notice", "Court Order", "FIR"}:
+        actions.append("Cross-check factual chronology, annexures, and statutory references against the latest case file or instructions.")
+
+    actions.append("Generate a final clean redraft with consistent definitions, clause numbering, and signature-ready formatting.")
+    return actions[:5]
+
+
+def build_report_overview(
+    doc_type_name: str,
+    risk_score: int,
+    completeness: dict,
+    language: dict
+) -> dict:
+    if risk_score >= 80 and completeness.get("score", 0) >= 80:
+        readiness = "Relatively strong draft with targeted review needed before use."
+    elif risk_score >= 60:
+        readiness = "Usable foundation, but it needs legal cleanup before being relied on."
+    else:
+        readiness = "Material legal and drafting issues were detected. Redrafting is strongly advised."
+
+    if doc_type_name in {"Contract", "Lease/Rental", "Sale Deed", "Mortgage Deed", "Gift Deed"}:
+        purpose = "This appears to be a transactional instrument intended to define rights, obligations, value exchange, and remedies."
+    elif doc_type_name in {"Petition", "Affidavit", "Legal Notice", "Court Order", "FIR"}:
+        purpose = "This appears to be a procedural legal document intended to assert facts, invoke legal remedies, or support a formal proceeding."
+    else:
+        purpose = "This appears to be a formal legal instrument that should be reviewed for structure, factual sufficiency, and enforceability."
+
+    return {
+        "purpose": purpose,
+        "readiness": readiness,
+        "completeness_status": f"{completeness.get('score', 0)}% structural completeness",
+        "language_status": f"{language.get('score', 0)}/100 drafting clarity"
+    }
 
 
 def perform_hardcore_analysis(
@@ -541,6 +1063,7 @@ async def analyze_legal_paper(file_path: str) -> dict:
 
     # 0. Extract text (CPU-bound — run in thread)
     text = await asyncio.to_thread(extract_text, file_path)
+    text = await asyncio.to_thread(normalize_extracted_text, text)
     if not text:
         return {"error": "Could not extract text from document. Ensure the file is not encrypted or corrupted."}
     if len(text.strip()) < 20:
@@ -551,18 +1074,20 @@ async def analyze_legal_paper(file_path: str) -> dict:
     doc_type_name = doc_type["type"]
 
     # 2. Run ALL regex-based analysis modules in parallel threads
-    entities_task = asyncio.to_thread(extract_entities, text)
+    profile_task = asyncio.to_thread(extract_document_profile, text)
+    entities_task = asyncio.to_thread(extract_entities_v2, text)
     risks_task = asyncio.to_thread(analyze_risk_clauses, text)
-    completeness_task = asyncio.to_thread(check_completeness, text, doc_type_name)
     language_task = asyncio.to_thread(assess_language_quality, text)
     summary_task = asyncio.to_thread(generate_summary, text)
+    obligations_task = asyncio.to_thread(extract_core_obligations, text, doc_type_name)
 
-    entities, risk_clauses, completeness, language, summary = await asyncio.gather(
-        entities_task, risks_task, completeness_task, language_task, summary_task
+    profile, entities, risk_clauses, language, summary, core_obligations = await asyncio.gather(
+        profile_task, entities_task, risks_task, language_task, summary_task, obligations_task
     )
+    completeness = await asyncio.to_thread(check_completeness_v2, text, doc_type_name, entities)
 
     # 3. Hardcore deterministic analysis — synthesize ALL results
-    neural = perform_hardcore_analysis(
+    neural_base = perform_hardcore_analysis(
         text=text,
         doc_type_name=doc_type_name,
         risk_clauses=risk_clauses,
@@ -572,24 +1097,76 @@ async def analyze_legal_paper(file_path: str) -> dict:
         summary_text=summary
     )
 
-    # 4. Compute risk score
+    final_neural = neural_base.copy()
+    neural_audit_mode = "deterministic"
+
+    # 4. Optional neural audit expansion
+    if LEGAL_PAPER_ENABLE_NEURAL_AUDIT:
+        from ai.llm_fallback import generate_neural_document_audit
+
+        deterministic_context = {
+            "doc_type": doc_type_name,
+            "risk_count": len(risk_clauses),
+            "comp_score": completeness.get("score", 0),
+            "entities": entities
+        }
+
+        neural_advanced = None
+        with contextlib.suppress(asyncio.TimeoutError):
+            neural_advanced = await asyncio.wait_for(
+                generate_neural_document_audit(text, doc_type_name, deterministic_context),
+                timeout=LEGAL_PAPER_NEURAL_TIMEOUT_SECONDS,
+            )
+
+        if neural_advanced:
+            final_neural.update({
+                "neural_audit": neural_advanced.get("neural_audit", neural_base["neural_audit"]),
+                "strategic_insights": neural_advanced.get("strategic_insights", neural_base["strategic_insights"]),
+                "structural_map": neural_advanced.get("structural_map", neural_base["structural_map"]),
+                "missing_elements": neural_advanced.get("missing_elements", neural_base["missing_elements"]),
+                "structural_integrity_score": neural_advanced.get("structural_integrity_score", neural_base["structural_integrity_score"])
+            })
+            neural_audit_mode = "hybrid"
+
+    # 5. Compute risk score
     high_risk = sum(1 for r in risk_clauses if r["severity"] == "high")
     med_risk = sum(1 for r in risk_clauses if r["severity"] == "medium")
     critical_risk = sum(1 for r in risk_clauses if r.get("severity") == "critical")
     risk_score = max(0, 100 - (critical_risk * 25) - (high_risk * 15) - (med_risk * 8))
 
+    issue_profile = await asyncio.to_thread(build_issue_profile, text, doc_type_name, entities, risk_clauses, completeness, language)
+    section_breakdown = await asyncio.to_thread(build_section_breakdown, text, doc_type_name)
+    strengths = await asyncio.to_thread(build_strengths, doc_type_name, completeness, language, entities, risk_clauses)
+    weak_points = await asyncio.to_thread(build_weak_points, doc_type_name, completeness, language, entities, risk_clauses)
+    fixing_solutions = await asyncio.to_thread(build_fixing_solutions, weak_points)
+    recommended_actions = await asyncio.to_thread(build_recommended_actions, doc_type_name, risk_clauses, completeness, entities)
+    report_overview = await asyncio.to_thread(build_report_overview, doc_type_name, risk_score, completeness, language)
+    analysis_confidence = await asyncio.to_thread(calculate_analysis_confidence, doc_type, issue_profile, entities, completeness)
+
     return {
         "document_type": doc_type,
         "summary": summary,
+        "document_profile": profile,
+        "analysis_confidence": analysis_confidence,
+        "report_overview": report_overview,
+        "issue_profile": issue_profile,
         "entities": entities,
+        "core_obligations": core_obligations,
+        "section_breakdown": section_breakdown,
+        "strengths": strengths,
+        "weak_points": weak_points,
+        "fixing_solutions": fixing_solutions,
+        "recommended_actions": recommended_actions,
         "risk_clauses": risk_clauses,
         "risk_score": risk_score,
         "completeness": completeness,
         "language_quality": language,
-        "neural_analysis": neural,
+        "neural_analysis": final_neural,
+        "analysis_runtime_mode": neural_audit_mode,
         "total_words": language.get("total_words", 0),
         "high_risk_count": high_risk,
         "medium_risk_count": med_risk,
         "low_risk_count": sum(1 for r in risk_clauses if r["severity"] == "low"),
-        "critical_risk_count": critical_risk
+        "critical_risk_count": critical_risk,
+        "supported_document_scope": list(DOC_TYPE_PATTERNS.keys())
     }

@@ -3,23 +3,70 @@ import re
 import json
 import uuid
 import logging
+from html import unescape
+from urllib.parse import parse_qs, unquote, urlparse
 import pdfplumber
 import requests
 from ai.embeddings import embed_text, embed_batch
 from ai.vector_store import add_documents, search, get_document_count
 from ai.llm_fallback import generate_fallback_response, _internal_deep_processing, _internal_synthesis_engine
-from config import RAG_SIMILARITY_THRESHOLD, RAG_TOP_K, LEGAL_DATA_DIR
+from config import RAG_SIMILARITY_THRESHOLD, RAG_TOP_K, LEGAL_DATA_DIR, OLLAMA_BACKUP_MODEL
+from services.ai_gateway import AIGatewayError, generate_text
+from services.firecrawl_service import firecrawl_scrape, firecrawl_search
 
 logger = logging.getLogger(__name__)
 
 
 # --- Web Search Integration (DuckDuckGo) ---
-def _web_search(query: str, max_results: int = 5) -> list:
-    """Search the web using DuckDuckGo Instant Answer API + HTML fallback."""
+def _web_session() -> requests.Session:
+    session = requests.Session()
+    session.trust_env = False
+    session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+    )
+    return session
+
+
+def _flatten_related_topics(items: list, limit: int) -> list:
+    flattened = []
+    for item in items:
+        if len(flattened) >= limit:
+            break
+        if isinstance(item, dict) and item.get("Text"):
+            flattened.append(item)
+            continue
+        if isinstance(item, dict) and isinstance(item.get("Topics"), list):
+            for nested in item["Topics"]:
+                if isinstance(nested, dict) and nested.get("Text"):
+                    flattened.append(nested)
+                if len(flattened) >= limit:
+                    break
+    return flattened[:limit]
+
+
+def _normalize_result_url(url: str) -> str:
+    if not url:
+        return ""
+    clean = unescape(url.strip())
+    if clean.startswith("//"):
+        clean = f"https:{clean}"
+    parsed = urlparse(clean)
+    if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
+        target = parse_qs(parsed.query).get("uddg", [""])[0]
+        if target:
+            return unquote(target)
+    return clean
+
+
+def _duckduckgo_search(query: str, max_results: int = 5) -> list:
+    """Fast web discovery path used before optional Firecrawl enrichment."""
     results = []
     try:
-        # DuckDuckGo Instant Answer API
-        resp = requests.get(
+        session = _web_session()
+        resp = session.get(
             "https://api.duckduckgo.com/",
             params={"q": f"{query} Indian law legal", "format": "json", "no_html": 1, "skip_disambig": 1},
             timeout=10
@@ -35,16 +82,85 @@ def _web_search(query: str, max_results: int = 5) -> list:
                     "url": data.get("AbstractURL", "")
                 })
             # Related topics
-            for topic in data.get("RelatedTopics", [])[:max_results]:
+            for topic in _flatten_related_topics(data.get("RelatedTopics", []), max_results):
                 if isinstance(topic, dict) and topic.get("Text"):
                     results.append({
                         "title": topic.get("Text", "")[:100],
                         "snippet": topic.get("Text", "")[:400],
                         "source": "DuckDuckGo",
-                        "url": topic.get("FirstURL", "")
+                        "url": _normalize_result_url(topic.get("FirstURL", ""))
                     })
     except Exception as e:
         logger.warning(f"Web search failed: {e}")
+
+    if results:
+        return results[:max_results]
+
+    try:
+        # HTML fallback when instant answers are sparse or unavailable
+        session = _web_session()
+        resp = session.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": f"{query} Indian law legal"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            html = resp.text
+            matches = re.findall(
+                r'nofollow" class="result__a" href="(?P<url>[^"]+)">(?P<title>.*?)</a>.*?<a class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
+                html,
+                flags=re.DOTALL,
+            )
+            for url, title, snippet in matches[:max_results]:
+                clean_title = re.sub(r"<.*?>", "", title).strip()
+                clean_snippet = re.sub(r"<.*?>", "", snippet).strip()
+                if clean_title and clean_snippet:
+                    results.append(
+                        {
+                            "title": clean_title[:120],
+                            "snippet": clean_snippet[:500],
+                            "source": "DuckDuckGo",
+                            "url": _normalize_result_url(url),
+                        }
+                    )
+    except Exception as e:
+        logger.warning(f"Web search HTML fallback failed: {e}")
+
+    return results[:max_results]
+
+
+def _web_search(query: str, max_results: int = 5) -> list:
+    """
+    Search the web using fast discovery first, then enrich the top result with
+    Firecrawl when available. This keeps the initial RAG request responsive.
+    """
+    results = _duckduckgo_search(query, max_results=max_results)
+
+    if not results:
+        try:
+            firecrawl_results = firecrawl_search(query, max_results=max_results)
+            if firecrawl_results:
+                logger.info("Firecrawl web search completed: %s results", len(firecrawl_results))
+                return firecrawl_results[:max_results]
+        except Exception as e:
+            logger.warning(f"Firecrawl web search failed: {e}")
+        return []
+
+    try:
+        top_result = results[0]
+        enriched = firecrawl_scrape(top_result.get("url", ""))
+        if enriched:
+            results[0] = {
+                **top_result,
+                "snippet": enriched.get("snippet") or top_result.get("snippet", ""),
+                "source": "Firecrawl",
+                "url": enriched.get("url") or top_result.get("url", ""),
+                "markdown": enriched.get("markdown", ""),
+            }
+            logger.info("Firecrawl enriched top web result for query: %s", query)
+    except Exception as e:
+        logger.warning(f"Firecrawl web enrichment failed: {e}")
+
     return results[:max_results]
 
 # --- In-memory knowledge stores (loaded once) ---
@@ -768,13 +884,174 @@ def _build_smart_static_research(query: str, matched_ipc: list, matched_procs: l
     }
 
 
+def _build_citations(results: list) -> list:
+    citations = []
+    for item in results[:8]:
+        citations.append({
+            "title": item.get("case_title", "Legal authority"),
+            "citation": item.get("citation", item.get("case_title", "Authority")),
+            "source_type": item.get("source_type", "knowledge_base"),
+            "court": item.get("court", ""),
+            "year": item.get("year", ""),
+            "relevance": item.get("relevance", 0.0),
+        })
+    return citations
+
+
+def _build_reasoning_sections(query: str, results: list, penal_codes: list, further_steps: list, risk_assessment: dict) -> list:
+    supporting_cases = [case.get("case_title", "Untitled authority") for case in results[:3]]
+    statutes = [code.get("code", "") for code in penal_codes[:4] if code.get("code")]
+    next_steps = [step.get("action", "") for step in further_steps[:3] if step.get("action")]
+    return [
+        {
+            "title": "Issue Framing",
+            "summary": f"The query concerns: {query}",
+            "bullets": supporting_cases or ["No direct precedent match was strong enough to headline the issue framing."],
+        },
+        {
+            "title": "Authorities and Statutes",
+            "summary": "The report blends retrieved precedents with statutory guidance when available.",
+            "bullets": statutes or ["No directly matched statute was identified from the structured corpus."],
+        },
+        {
+            "title": "Counterpoints and Risks",
+            "summary": risk_assessment.get("summary", "Further factual testing is required."),
+            "bullets": risk_assessment.get("factors_against", [])[:4],
+        },
+        {
+            "title": "Recommended Litigation Steps",
+            "summary": "Recommended operational next steps for the legal team.",
+            "bullets": next_steps or ["Gather additional evidence and refine the factual chronology before escalation."],
+        },
+    ]
+
+
+def _build_report_markdown(query: str, results: list, penal_codes: list, procedures: list, further_steps: list, risk_assessment: dict, mode: str) -> str:
+    """Generate a richly formatted markdown research brief."""
+    lines = []
+
+    # Executive Answer
+    lines.append("## Executive Answer\n")
+    mode_label = mode.replace('_', ' ').title()
+    strength = risk_assessment.get('strength', 'moderate').title()
+    score = risk_assessment.get('score', 55)
+    lines.append(f"This research run used **{mode_label}** analysis for the query: **{query}**.")
+    lines.append(f"Overall case strength is assessed as **{strength}** with a confidence score of **{score}/100**.\n")
+
+    # Key Authorities
+    lines.append("---\n")
+    lines.append("## Key Authorities\n")
+    if results:
+        for item in results[:5]:
+            title = item.get('case_title', 'Authority')
+            court = item.get('court', 'Unknown Court')
+            year = item.get('year', 'Unknown')
+            summary = item.get('summary', '')[:280].strip()
+            relevance = item.get('relevance', 0)
+            lines.append(f"### {title}\n")
+            lines.append(f"**Court:** {court} &nbsp;|&nbsp; **Year:** {year} &nbsp;|&nbsp; **Relevance:** {relevance}%\n")
+            lines.append(f"> {summary}\n")
+    else:
+        lines.append("No strong precedent match was identified. The analysis relies on statutory and model-assisted reasoning.\n")
+
+    # Statutory Position
+    lines.append("---\n")
+    lines.append("## Statutory Framework\n")
+    if penal_codes:
+        lines.append("| Provision | Title | Description |")
+        lines.append("|:----------|:------|:------------|")
+        for code in penal_codes[:5]:
+            c = code.get('code', 'N/A').replace('|', '/')
+            t = code.get('title', '').replace('|', '/') 
+            d = code.get('description', '')[:200].replace('|', '/').replace('\n', ' ')
+            lines.append(f"| **{c}** | {t} | {d} |")
+        lines.append("")
+    else:
+        lines.append("No directly matched penal or statutory provisions were surfaced from the corpus.\n")
+
+    # Procedural Path
+    lines.append("---\n")
+    lines.append("## Procedural Roadmap\n")
+    if procedures:
+        for step in procedures[:6]:
+            step_num = step.get('step', '')
+            title = step.get('title', '')
+            desc = step.get('description', '')[:220].strip()
+            timeline = step.get('timeline', '')
+            tl_text = f" *(Timeline: {timeline})*" if timeline else ""
+            lines.append(f"**Step {step_num}:** {title}{tl_text}\n")
+            lines.append(f"{desc}\n")
+    else:
+        lines.append("Procedural guidance remains high level until more fact-specific documents are uploaded.\n")
+
+    # Risk and Counterpoints
+    lines.append("---\n")
+    lines.append("## Risk Assessment\n")
+    summary_text = risk_assessment.get('summary', 'Further legal review required.')
+    lines.append(f"**Overall Strength:** {strength} &nbsp;|&nbsp; **Score:** {score}/100\n")
+    lines.append(f"> {summary_text}\n")
+    factors_for = risk_assessment.get('factors_for', [])
+    factors_against = risk_assessment.get('factors_against', [])
+    if factors_for:
+        lines.append("**Supporting Factors:**\n")
+        for f in factors_for:
+            lines.append(f"- ✅ {f}")
+        lines.append("")
+    if factors_against:
+        lines.append("**Vulnerabilities:**\n")
+        for f in factors_against:
+            lines.append(f"- ⚠️ {f}")
+        lines.append("")
+
+    # Recommended Next Steps
+    lines.append("---\n")
+    lines.append("## Recommended Next Steps\n")
+    if further_steps:
+        for i, item in enumerate(further_steps[:5], 1):
+            priority = item.get('priority', 'medium').upper()
+            action = item.get('action', '')
+            reason = item.get('reason', '')[:180]
+            lines.append(f"{i}. **[{priority}]** {action} — {reason}")
+        lines.append("")
+    else:
+        lines.append("1. Prepare a factual chronology, identify documents, and validate limitation timelines.\n")
+
+    return "\n".join(lines)
+
+
+def _build_answer_summary(query: str, results: list, risk_assessment: dict, mode: str) -> str:
+    lead = results[0].get("case_title", "the retrieved corpus") if results else "the retrieved legal corpus"
+    return (
+        f"For the query '{query}', the strongest current signal comes from {lead}. "
+        f"The system classified this run as {mode.replace('_', ' ')}, with a current confidence of "
+        f"{risk_assessment.get('score', 55)} out of 100 pending a document-level factual review."
+    )
+
+
+def _build_web_findings(web_results: list) -> list:
+    findings = []
+    for item in web_results[:5]:
+        findings.append({
+            "title": item.get("title", "Web Research"),
+            "snippet": item.get("snippet", "")[:500],
+            "source": item.get("source", "Web"),
+            "url": item.get("url", ""),
+        })
+    return findings
+
+
 def search_legal(query: str) -> dict:
     """
     Main RAG search + structured knowledge base lookup + web search.
     Returns a comprehensive legal research report.
     Always produces rich results even when AI engines are offline.
     """
-    # 1. Vector search (may fail if embeddings not loaded)
+    # 1. Thread Pool Parallelization
+    import concurrent.futures
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    web_future = executor.submit(_web_search, query, 3)
+
+    # 2. Vector search (may fail if embeddings not loaded)
     results = []
     rag_succeeded = False
     try:
@@ -889,13 +1166,15 @@ def search_legal(query: str) -> dict:
         results.sort(key=lambda x: x["relevance"], reverse=True)
         results = results[:10]
 
-    # 3. Web search enrichment (runs in parallel for additional context)
+    # 3. Web search enrichment (runs in parallel, awaiting threaded future)
     web_results = []
     try:
-        web_results = _web_search(query, max_results=5)
-        logger.info(f"Web search returned {len(web_results)} results")
+        web_results = web_future.result(timeout=30) or []
+        logger.info(f"Web search completed concurrently: {len(web_results)} results")
     except Exception as e:
-        logger.warning(f"Web search enrichment failed: {e}")
+        logger.warning(f"Web search thread timed out or failed: {e}")
+    finally:
+        executor.shutdown(wait=False)
 
     # Add web results as supplementary cases if we have few results
     if len(results) < 3 and web_results:
@@ -930,34 +1209,24 @@ def search_legal(query: str) -> dict:
     # 4. Build context for LLM (include web search data)
     context_str = ""
     if results:
-        context_str = "\n".join([
-            f"- {r['case_title']} ({r['year']}, {r['court']}): {r['summary'][:300]}..."
-            for r in results[:5]
+        context_str = "\n[DATABASE PRECEDENT MATCHES]\n" + "\n".join([
+            f"- {r['case_title']} ({r['court']}): {r['summary'][:200]}..."
+            for r in results[:4]
         ])
     if matched_ipc:
-        context_str += "\nRelevant IPC Sections:\n" + "\n".join([
-            f"- {s['section']}: {s['title']} — {s['description'][:150]}"
-            for s in matched_ipc[:5]
+        context_str += "\n[DATABASE STATUTORY MATCHES]\n" + "\n".join([
+            f"- {s['section']}: {s['description'][:150]}"
+            for s in matched_ipc[:3]
         ])
     if web_results:
-        context_str += "\nWeb Research Findings:\n" + "\n".join([
+        context_str += "\n[LIVE WEB SEARCH DATA]\n" + "\n".join([
             f"- {wr['title']}: {wr['snippet'][:200]}"
             for wr in web_results[:3]
         ])
 
-    # 5. LLM synthesis — Qwen-powered deep research (Perplexity-style)
-    logger.info("Generating Qwen-powered deep research report...")
-    deep = {}
-    try:
-        deep = _internal_deep_processing(query, context=context_str if context_str else None)
-        if deep and isinstance(deep, dict) and deep.get("synthesis"):
-            logger.info(f"AI synthesis succeeded ({len(deep.get('synthesis', ''))} chars)")
-        else:
-            logger.warning("AI synthesis returned empty — falling back to static engine")
-            deep = _build_smart_static_research(query, matched_ipc, matched_procs, results)
-    except Exception as e:
-        logger.error(f"Deep research failed: {e} — using static fallback")
-        deep = _build_smart_static_research(query, matched_ipc, matched_procs, results)
+    # 5. Skip blocking LLM synthesis — defer to /api/research/synthesize 
+    logger.info("Skipping deep research here to improve initial latency. Deferring to async synthesis.")
+    deep = _build_smart_static_research(query, matched_ipc, matched_procs, results)
 
 
     # Merge LLM-generated data with knowledge base data
@@ -998,8 +1267,9 @@ def search_legal(query: str) -> dict:
     })
 
     source = "rag" if rag_succeeded and results else "knowledge_base"
+    max_relevance = max((item.get("relevance", 0) for item in results), default=0)
+    mode = "corpus_grounded" if max_relevance >= 72 or penal_codes else "model_assisted"
     if not results:
-        # Absolute fallback — always return something useful
         synthesis = deep.get("synthesis", "Analysis based on matched legal data.")
         results = [{
             "case_title": "Legal Analysis Summary",
@@ -1010,33 +1280,127 @@ def search_legal(query: str) -> dict:
             "relevance": 75,
             "source_type": "knowledge_base"
         }]
+        max_relevance = 75
+
+    citations = _build_citations(results)
+    reasoning_sections = _build_reasoning_sections(query, results, penal_codes, further_steps, risk_assessment)
+    authorities = list(dict.fromkeys(
+        [item.get("case_title", "") for item in results[:5] if item.get("case_title")]
+        + [code.get("code", "") for code in penal_codes[:5] if code.get("code")]
+    ))
+    confidence = round(min(0.96, max(0.35, (max_relevance or risk_assessment.get("score", 55)) / 100)), 2)
+    answer = _build_answer_summary(query, results, risk_assessment, mode)
+    report_markdown = _build_report_markdown(query, results, penal_codes, procedures, further_steps, risk_assessment, mode)
+    web_findings = _build_web_findings(web_results)
+    source_overview = {
+        "ai_ready": False,
+        "database_hits": len(results),
+        "statutory_hits": len(penal_codes),
+        "procedure_hits": len(procedures),
+        "web_hits": len(web_findings),
+    }
 
     return {
         "results": results,
-        "similar_cases": results, # Field normalization for frontend consistency
-        "synthesis": deep.get("synthesis", "Analysis based on matched legal data."),
+        "similar_cases": results,
+        "synthesis": deep.get("synthesis", answer),
+        "ai_summary": answer,
+        "answer": answer,
+        "report_markdown": report_markdown,
+        "citations": citations,
+        "authorities": authorities,
+        "reasoning_sections": reasoning_sections,
+        "confidence": confidence,
+        "mode": mode,
         "penal_codes": penal_codes,
         "procedures": procedures,
         "court_hierarchy": court_hierarchy,
         "further_steps": further_steps,
         "risk_assessment": risk_assessment,
+        "context_for_ai": context_str,
+        "web_findings": web_findings,
+        "source_overview": source_overview,
+        "trace": {
+            "retrieval_mode": source,
+            "semantic_hits": len(results),
+            "web_hits": len(web_results),
+            "statutory_hits": len(penal_codes),
+            "procedure_hits": len(procedures),
+        },
         "total": len(results),
         "source": source,
         "web_sources": [{"title": wr.get("title", ""), "url": wr.get("url", "")} for wr in web_results[:5]] if web_results else [],
-        "context_for_ai": context_str, # Return this so frontend can pass it back for synthesis
-        "synthesis_ready": True
+        "synthesis_ready": False
     }
 
 def get_research_synthesis(query: str, context: str) -> dict:
-    """Late-load AI synthesis for research report."""
+    """Late-load AI synthesis using a cascade: Local Ollama (Fast) -> Managed Gateway (Quality)."""
     try:
-        result = _internal_synthesis_engine(query, context)
-        if result and isinstance(result, dict):
-            return result
-        return {"synthesis": "AI reasoning is currently unavailable. Using JurisCore static analysis."}
+        compact_context = (context or "")[:2800]
+        prompt = (
+            f"Prepare a legal research answer for the query: {query}\n\n"
+            f"Retrieved grounded context from database and web research:\n{compact_context}\n\n"
+            "Write a fast but still in-depth Perplexity-style research memo in markdown. "
+            "Use the retrieved database and web context as the backbone of the answer. "
+            "Structure it with these sections: Executive Answer, Key Authorities, Statutory Framework, "
+            "Application to Facts, Counterpoints, Procedural Roadmap, Evidence Checklist, and Next Steps. "
+        )
+
+        # 1. Try Local Ollama first for speed and reliability
+        from ai.llm_fallback import _call_ollama
+        from config import OLLAMA_MODEL, OLLAMA_BACKUP_MODEL
+        
+        logger.info("Attempting local synthesis via Ollama...")
+        local_text = _call_ollama(prompt, max_tokens=1800, model_name=OLLAMA_BACKUP_MODEL, timeout=40)
+        if not local_text:
+            local_text = _call_ollama(prompt, max_tokens=1800, model_name=OLLAMA_MODEL, timeout=40)
+            
+        if local_text:
+            logger.info("Local synthesis successful.")
+            return {
+                "synthesis": local_text,
+                "ai_summary": local_text.split("\n", 1)[0].replace("#", "").strip()[:240],
+                "report_markdown": local_text,
+                "answer": local_text.split("\n", 1)[0].replace("#", "").strip()[:240],
+                "source_overview": {"ai_ready": True, "provider": "local_ollama"},
+                "synthesis_ready": True,
+            }
+
+        # 2. Fallback to Managed Gateway
+        logger.info("Local synthesis failed or skipped; falling back to AI Gateway.")
+        result = generate_text(
+            prompt,
+            kind="research",
+            temperature=0.1,
+            max_tokens=1800
+        )
+        text = result.get("text", "")
+        if text:
+            return {
+                "synthesis": text,
+                "ai_summary": text.split("\n", 1)[0].replace("#", "").strip()[:240],
+                "report_markdown": text,
+                "answer": text.split("\n", 1)[0].replace("#", "").strip()[:240],
+                "trace": result.get("trace", {}),
+                "source_overview": {"ai_ready": True},
+                "synthesis_ready": True,
+            }
+        return {
+            "synthesis": "AI reasoning is currently unavailable. Using JurisCore static analysis.",
+            "source_overview": {"ai_ready": False},
+        }
+    except AIGatewayError as e:
+        logger.error(f"Synthesis failed: {e}")
+        return {
+            "synthesis": "AI reasoning is currently unavailable. Using JurisCore static analysis.",
+            "source_overview": {"ai_ready": False},
+        }
     except Exception as e:
         logger.error(f"Synthesis failed: {e}")
-        return {"synthesis": "AI reasoning is currently unavailable. Using JurisCore static analysis."}
+        return {
+            "synthesis": "AI reasoning is currently unavailable. Using JurisCore static analysis.",
+            "source_overview": {"ai_ready": False},
+        }
 
 
 async def get_llm_response(prompt: str, json_mode: bool = False) -> str:

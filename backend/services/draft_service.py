@@ -1,6 +1,8 @@
 import os
 import uuid
 import logging
+import re
+import asyncio
 from datetime import datetime, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -10,6 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from config import TEMPLATE_DIR, GENERATED_DIR, LOGO_PATH
 from database.db import supabase
+from services.ai_gateway import AIGatewayError, generate_text
 
 logger = logging.getLogger(__name__)
 
@@ -401,22 +404,170 @@ def generate_pdf(text: str, title: str, draft_id: str, firm_name: str = "") -> s
     return file_path
 
 
-async def create_draft(db, doc_type: str, client_name: str, opposing_party: str, case_description: str, firm_name: str = "") -> dict:
-    """Full draft generation pipeline — no MongoDB needed."""
-    draft_id = uuid.uuid4().hex[:12]
-    draft_text = fill_template(doc_type, client_name, opposing_party, case_description)
-    pdf_path = generate_pdf(draft_text, doc_type, draft_id, firm_name)
+def _extract_issue_points(case_description: str) -> list[str]:
+    clauses = []
+    sentences = [segment.strip() for segment in re.split(r"[.\n]+", case_description or "") if segment.strip()]
+    for sentence in sentences[:4]:
+        clauses.append(sentence)
+    if not clauses:
+        clauses.append("Core factual allegations and requested relief need to be particularized.")
+    return clauses
 
-    # Store in memory (replaces MongoDB)
+
+def _build_clause_notes(doc_type: str, case_description: str) -> list[dict]:
+    issue_points = _extract_issue_points(case_description)
+    starter_map = {
+        "Legal Notice": [
+            ("Demand and breach", "State the contractual or statutory breach with dates, prior notices, and a specific cure period."),
+            ("Relief and consequences", "Specify the remedy demanded and the litigation or regulatory step that follows non-compliance."),
+        ],
+        "Consumer Complaint": [
+            ("Deficiency in service", "Tie the fact pattern to a consumer protection duty and quantify the prejudice caused."),
+            ("Prayer", "Ask for compensation, refund, costs, and any corrective directions in clear, separate clauses."),
+        ],
+    }
+    base = starter_map.get(doc_type, [
+        ("Factual record", "Set out the chronology, documents relied upon, and the legal right being asserted."),
+        ("Operative relief", "Make the requested relief enforceable, measurable, and procedurally aligned."),
+    ])
+    notes = []
+    for index, (clause, guidance) in enumerate(base):
+        notes.append({
+            "clause": clause,
+            "guidance": guidance,
+            "rationale": issue_points[min(index, len(issue_points) - 1)],
+        })
+    return notes
+
+
+def _build_open_questions(doc_type: str, client_name: str, opposing_party: str, case_description: str) -> list[str]:
+    questions = []
+    if "[Address]" in load_template(doc_type):
+        questions.append(f"Confirm service addresses and identifiers for {client_name} and {opposing_party}.")
+    if not re.search(r"\b(date|dated|on)\b", case_description.lower()):
+        questions.append("Add the key event dates, notice dates, and limitation-sensitive deadlines.")
+    if not re.search(r"\b(amount|rs|rupees|₹)\b", case_description.lower()):
+        questions.append("State any monetary claim, damages figure, or valuation basis.")
+    return questions[:4]
+
+
+def _build_risk_flags(case_description: str) -> list[str]:
+    lowered = (case_description or "").lower()
+    flags = []
+    if "agreement" in lowered and "written" not in lowered:
+        flags.append("The matter references an agreement but does not confirm whether the executed copy is available.")
+    if "payment" in lowered and not re.search(r"\b(invoice|receipt|bank|transfer)\b", lowered):
+        flags.append("A payment dispute is described without documentary proof being identified.")
+    if not re.search(r"\bemail|message|notice|letter|document|annexure\b", lowered):
+        flags.append("Supporting correspondence and annexures are not yet referenced in the brief.")
+    return flags[:4]
+
+
+def _draft_prompt(doc_type: str, client_name: str, opposing_party: str, case_description: str, firm_name: str, tone: str, base_text: str) -> str:
+    return f"""
+Prepare a polished Indian legal draft for the following matter.
+
+Document Type: {doc_type}
+Client / Applicant: {client_name}
+Opposing Party / Respondent: {opposing_party}
+Law Firm / Chamber: {firm_name or "JurisAI Legal"}
+Tone: {tone}
+
+Factual Brief:
+{case_description}
+
+Base Structural Template:
+{base_text}
+
+Requirements:
+1. Preserve the legal structure appropriate for the document type.
+2. Use precise, premium legal drafting language rather than generic AI phrasing.
+3. Expand the factual matrix, legal basis, relief, and procedural posture.
+4. Add headings, numbered paragraphs, and crisp operative clauses.
+5. Do not use placeholders except where the input truly lacks a fact.
+6. Return only the final draft text.
+""".strip()
+
+
+def _build_draft_brief(doc_type: str, tone: str, clause_notes: list[dict], risk_flags: list[str]) -> str:
+    emphasis = ", ".join(note["clause"] for note in clause_notes[:3])
+    risk_text = "; ".join(risk_flags[:2]) if risk_flags else "No critical red flags detected from the supplied brief."
+    return (
+        f"{doc_type} generated in a {tone.lower()} voice with emphasis on {emphasis}. "
+        f"Priority review items: {risk_text}"
+    )
+
+
+def _persist_optional_draft_run(payload: dict) -> None:
+    try:
+        supabase.table("draft_runs").insert(payload).execute()
+    except Exception as exc:
+        logger.info("Optional draft_runs persistence skipped: %s", exc)
+
+
+def _persist_optional_draft_version(payload: dict) -> None:
+    try:
+        supabase.table("draft_versions").insert(payload).execute()
+    except Exception as exc:
+        logger.info("Optional draft_versions persistence skipped: %s", exc)
+
+
+async def create_draft(db, doc_type: str, client_name: str, opposing_party: str, case_description: str, firm_name: str = "", tone: str = "Neutral", research_context: str = "") -> dict:
+    """Generate a structured, matter-aware draft and capture version metadata."""
+    draft_id = uuid.uuid4().hex[:12]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    base_text = fill_template(doc_type, client_name, opposing_party, case_description)
+
+    clause_notes = _build_clause_notes(doc_type, case_description)
+    open_questions = _build_open_questions(doc_type, client_name, opposing_party, case_description)
+    risk_flags = _build_risk_flags(case_description)
+    prompt = _draft_prompt(doc_type, client_name, opposing_party, case_description, firm_name, tone, base_text)
+
+    trace = {"provider": "template", "model": "builtin", "fallback_used": True, "status": "ok"}
+    try:
+        ai_result = await asyncio.wait_for(
+            asyncio.to_thread(
+                generate_text,
+                prompt,
+                "document",
+                0.15,
+                2200,
+            ),
+            timeout=18,
+        )
+        trace = ai_result.get("trace", trace)
+        neural_text = ai_result.get("text", "")
+    except (AIGatewayError, TimeoutError) as exc:
+        logger.warning("Draft generation used deterministic fallback: %s", exc)
+        neural_text = ""
+
+    final_text = neural_text if (neural_text and len(neural_text) > 240) else base_text
+    pdf_path = await asyncio.to_thread(generate_pdf, final_text, doc_type, draft_id, firm_name)
+    version_id = f"{draft_id}-v1"
+    draft_brief = _build_draft_brief(doc_type, tone, clause_notes, risk_flags)
+
     _generated_drafts[draft_id] = {
         "draft_id": draft_id,
         "document_type": doc_type,
         "file_path": pdf_path,
-        "preview_text": draft_text[:500],
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "preview_text": final_text,
+        "generated_draft": final_text,
+        "draft_brief": draft_brief,
+        "clause_notes": clause_notes,
+        "open_questions": open_questions,
+        "risk_flags": risk_flags,
+        "version_history": [
+            {
+                "version_id": version_id,
+                "created_at": now_iso,
+                "summary": "Initial matter-aware draft generated from the case brief.",
+                "instructions": "Initial generation",
+            }
+        ],
+        "trace": trace,
+        "created_at": now_iso,
     }
 
-    # Persist to Supabase for global analytics
     try:
         user_id = db if isinstance(db, (int, str)) and str(db).isdigit() else None
         supabase.table("draft_history").insert({
@@ -424,17 +575,44 @@ async def create_draft(db, doc_type: str, client_name: str, opposing_party: str,
             "doc_type": doc_type,
             "draft_id": draft_id,
             "client_name": client_name,
-            "timestamp": _generated_drafts[draft_id]["created_at"]
+            "timestamp": now_iso
         }).execute()
     except Exception as e:
         logger.warning(f"Failed to persist draft history to Supabase: {e}")
 
+    _persist_optional_draft_run({
+        "draft_id": draft_id,
+        "user_id": db if isinstance(db, (int, str)) and str(db).isdigit() else None,
+        "document_type": doc_type,
+        "client_name": client_name,
+        "opposing_party": opposing_party,
+        "matter_summary": case_description,
+        "draft_brief": draft_brief,
+        "risk_flags": risk_flags,
+        "created_at": now_iso,
+    })
+    _persist_optional_draft_version({
+        "draft_id": draft_id,
+        "version_id": version_id,
+        "content": final_text,
+        "summary": "Initial matter-aware draft generated from the case brief.",
+        "instructions": "Initial generation",
+        "created_at": now_iso,
+    })
+
     return {
         "draft_id": draft_id,
-        "preview_text": draft_text[:500] + "...",
+        "preview_text": final_text,
+        "generated_draft": final_text,
+        "draft_brief": draft_brief,
+        "clause_notes": clause_notes,
+        "open_questions": open_questions,
+        "risk_flags": risk_flags,
+        "version_history": _generated_drafts[draft_id]["version_history"],
         "download_url": f"/api/download-draft/{draft_id}",
         "document_type": doc_type,
-        "created_at": _generated_drafts[draft_id]["created_at"]
+        "created_at": now_iso,
+        "trace": trace,
     }
 
 
@@ -446,3 +624,92 @@ def get_draft_file_path(draft_id: str) -> str:
     # Fallback: look for file directly
     file_path = os.path.join(GENERATED_DIR, f"{draft_id}.pdf")
     return file_path if os.path.exists(file_path) else ""
+
+
+def get_draft_versions(draft_id: str) -> list[dict]:
+    info = _generated_drafts.get(draft_id, {})
+    return info.get("version_history", [])
+
+
+async def redraft_existing(draft_id: str, instructions: str, tone: str = "Neutral") -> dict:
+    info = _generated_drafts.get(draft_id)
+    if not info:
+        raise ValueError("Draft not found")
+
+    prompt = (
+        f"Redraft the following legal document in a {tone.lower()} voice.\n"
+        f"Revision instructions: {instructions}\n\n"
+        f"CURRENT DRAFT:\n{info.get('generated_draft') or info.get('preview_text', '')}\n\n"
+        "Return only the revised legal draft."
+    )
+    try:
+        ai_result = generate_text(prompt, kind="document", temperature=0.12, max_tokens=2200)
+        revised_text = ai_result.get("text", "")
+        trace = ai_result.get("trace", {})
+    except Exception as exc:
+        logger.warning("Redraft fell back to deterministic copy: %s", exc)
+        revised_text = f"{info.get('generated_draft') or info.get('preview_text', '')}\n\nRevision note: {instructions}"
+        trace = {"provider": "template", "model": "builtin", "fallback_used": True, "status": "ok"}
+
+    version_number = len(info.get("version_history", [])) + 1
+    version_id = f"{draft_id}-v{version_number}"
+    summary = f"Revision generated with instructions: {instructions[:80]}"
+    info["generated_draft"] = revised_text
+    info["preview_text"] = revised_text
+    info.setdefault("version_history", []).append({
+        "version_id": version_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "summary": summary,
+        "instructions": instructions,
+    })
+    info["trace"] = trace
+    pdf_path = generate_pdf(revised_text, info.get("document_type", "Legal Draft"), draft_id, "")
+    info["file_path"] = pdf_path
+
+    _persist_optional_draft_version({
+        "draft_id": draft_id,
+        "version_id": version_id,
+        "content": revised_text,
+        "summary": summary,
+        "instructions": instructions,
+        "created_at": info["version_history"][-1]["created_at"],
+    })
+
+    return {
+        "draft_id": draft_id,
+        "preview_text": revised_text,
+        "generated_draft": revised_text,
+        "draft_brief": info.get("draft_brief", ""),
+        "clause_notes": info.get("clause_notes", []),
+        "open_questions": info.get("open_questions", []),
+        "risk_flags": info.get("risk_flags", []),
+        "version_history": info.get("version_history", []),
+        "download_url": f"/api/download-draft/{draft_id}",
+        "document_type": info.get("document_type", "Legal Draft"),
+        "created_at": info.get("created_at", datetime.now(timezone.utc).isoformat()),
+        "trace": trace,
+    }
+
+async def fix_weak_points(draft_text: str, issues: str) -> str:
+    """AI or rule-based enhancement to fix weak points in the draft."""
+    try:
+        prompt = (
+            "Revise the following legal draft so it reads like a polished chamber-ready document.\n"
+            f"Priority issues to address: {issues}\n\n"
+            f"DRAFT:\n{draft_text}\n\n"
+            "Requirements:\n"
+            "1. Remove ambiguity.\n"
+            "2. Tighten obligations, relief, and procedural language.\n"
+            "3. Preserve facts while improving enforceability.\n"
+            "4. Return only the revised draft text."
+        )
+        fixed_text = generate_text(prompt, kind="document", temperature=0.1, max_tokens=2200).get("text", "")
+        if fixed_text and len(fixed_text) > 50:
+            return fixed_text
+    except Exception as e:
+        logger.error(f"Failed to use LLM to fix draft: {e}")
+    
+    # Fallback to rule-based fixing if LLM fails
+    fixed = draft_text.replace("may", "shall").replace("might", "will")
+    fixed += "\n\n[Clause Added for Robustness: This agreement is fully integrated and supersedes all prior representations.]"
+    return fixed

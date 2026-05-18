@@ -4,7 +4,7 @@ import { Scale } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="w-full border-t border-white/5 bg-[#000000] py-14 mt-auto">
+    <footer className="w-full border-t border-border bg-background py-14 mt-auto">
       <div className="container mx-auto px-6 lg:px-8">
         <div className="flex flex-col md:flex-row justify-between items-center gap-10">
           <div className="flex items-center gap-3">

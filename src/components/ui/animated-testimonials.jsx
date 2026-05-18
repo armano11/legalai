@@ -1,6 +1,6 @@
 import { IconArrowLeft, IconArrowRight } from "@tabler/icons-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // Adapting the provided Aceternity Animated Testimonials component for Vite/React
@@ -12,14 +12,15 @@ export const AnimatedTestimonials = ({
   onAssignCase
 }) => {
   const [active, setActive] = useState(0);
+  const safeLength = testimonials.length || 1;
 
-  const handleNext = () => {
-    setActive((prev) => (prev + 1) % testimonials.length);
-  };
+  const handleNext = useCallback(() => {
+    setActive((prev) => (prev + 1) % safeLength);
+  }, [safeLength]);
 
-  const handlePrev = () => {
-    setActive((prev) => (prev - 1 + testimonials.length) % testimonials.length);
-  };
+  const handlePrev = useCallback(() => {
+    setActive((prev) => (prev - 1 + safeLength) % safeLength);
+  }, [safeLength]);
 
   const isActive = (index) => {
     return index === active;
@@ -30,11 +31,12 @@ export const AnimatedTestimonials = ({
       const interval = setInterval(handleNext, 5000);
       return () => clearInterval(interval);
     }
-  }, [autoplay]);
+  }, [autoplay, handleNext]);
 
-  const randomRotateY = () => {
-    return Math.floor(Math.random() * 21) - 10;
-  };
+  const rotateByIndex = useMemo(
+    () => testimonials.map((_, index) => ((index * 13) % 21) - 10),
+    [testimonials]
+  );
 
   return (
     <div className={cn("max-w-sm md:max-w-4xl mx-auto px-4 md:px-8 lg:px-12 py-10", className)}>
@@ -49,13 +51,13 @@ export const AnimatedTestimonials = ({
                     opacity: 0,
                     scale: 0.9,
                     z: -100,
-                    rotate: randomRotateY(),
+                    rotate: rotateByIndex[index] || 0,
                   }}
                   animate={{
                     opacity: isActive(index) ? 1 : 0.7,
                     scale: isActive(index) ? 1 : 0.95,
                     z: isActive(index) ? 0 : -100,
-                    rotate: isActive(index) ? 0 : randomRotateY(),
+                    rotate: isActive(index) ? 0 : (rotateByIndex[index] || 0),
                     zIndex: isActive(index)
                       ? 999
                       : testimonials.length + 2 - index,
@@ -65,7 +67,7 @@ export const AnimatedTestimonials = ({
                     opacity: 0,
                     scale: 0.9,
                     z: 100,
-                    rotate: randomRotateY(),
+                    rotate: rotateByIndex[index] || 0,
                   }}
                   transition={{
                     duration: 0.4,

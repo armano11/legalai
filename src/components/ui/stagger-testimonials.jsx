@@ -90,32 +90,19 @@ export const StaggerTestimonials = ({
     onAssignCase 
 }) => {
   const [cardSize, setCardSize] = useState(365);
-  const [testimonialsList, setTestimonialsList] = useState(testimonials);
+  const [rotation, setRotation] = useState(0);
 
-  // Sync internal list when prop changes
-  useEffect(() => {
-    if (testimonials.length > 0) {
-        setTestimonialsList(testimonials.map((t, i) => ({ ...t, tempId: t.id || i })));
-    }
-  }, [testimonials]);
+  const testimonialsList = React.useMemo(() => {
+    if (testimonials.length === 0) return [];
+    const normalized = testimonials.map((t, i) => ({ ...t, tempId: t.id || t.src || i }));
+    const len = normalized.length;
+    const offset = ((rotation % len) + len) % len;
+    return [...normalized.slice(offset), ...normalized.slice(0, offset)];
+  }, [rotation, testimonials]);
 
   const handleMove = (steps) => {
     if (testimonialsList.length === 0) return;
-    const newList = [...testimonialsList];
-    if (steps > 0) {
-      for (let i = steps; i > 0; i--) {
-        const item = newList.shift();
-        if (!item) return;
-        newList.push({ ...item, tempId: Math.random() });
-      }
-    } else {
-      for (let i = steps; i < 0; i++) {
-        const item = newList.pop();
-        if (!item) return;
-        newList.unshift({ ...item, tempId: Math.random() });
-      }
-    }
-    setTestimonialsList(newList);
+    setRotation((prev) => prev + steps);
   };
 
   useEffect(() => {

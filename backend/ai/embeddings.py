@@ -5,15 +5,27 @@ from config import EMBEDDING_MODEL
 logger = logging.getLogger(__name__)
 
 _model = None
+_model_failed = False
 
 
 def get_model():
     """Lazy-load the embedding model."""
-    global _model
+    global _model, _model_failed
+    if _model_failed:
+        raise RuntimeError("Embedding model is unavailable in the current local environment.")
     if _model is None:
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
-        _model = SentenceTransformer(EMBEDDING_MODEL)
-        logger.info("Embedding model loaded successfully.")
+        try:
+            # Stay quiet and deterministic in local/offline environments.
+            _model = SentenceTransformer(EMBEDDING_MODEL, local_files_only=True)
+            logger.info("Embedding model loaded successfully from local cache.")
+        except Exception as exc:
+            _model_failed = True
+            logger.warning(
+                "Embedding model not available locally; vector retrieval will be skipped until the model is cached. %s",
+                exc,
+            )
+            raise RuntimeError("Embedding model not available locally.") from exc
     return _model
 
 

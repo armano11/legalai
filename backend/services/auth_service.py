@@ -12,13 +12,32 @@ from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_HOURS
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ADMIN_EMAIL = "darwin@gmail.com"
-DEFAULT_ADMIN_PASSWORD = "12345678"
-DEFAULT_ADMIN_FIRM_ID = "JA-DARWIN"
-DEFAULT_ADMIN_FIRM_NAME = "Darwin Legal"
-DEMO_LAWYER_PASSWORD = "demo12345"
-DEMO_TEAM_TARGET = 24
-DEMO_CASE_TARGET = 36
+DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "").strip().lower()
+DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "")
+DEFAULT_ADMIN_FIRM_ID = (os.environ.get("DEFAULT_ADMIN_FIRM_ID", "JA-DARWIN") or "JA-DARWIN").strip().upper()
+DEFAULT_ADMIN_FIRM_NAME = (os.environ.get("DEFAULT_ADMIN_FIRM_NAME", "Darwin Legal") or "Darwin Legal").strip()
+ENABLE_BOOTSTRAP_ADMIN = os.environ.get("ENABLE_BOOTSTRAP_ADMIN", "false").lower() == "true"
+PASSWORD_POLICY_MESSAGE = (
+    "Password must be at least 10 characters and include uppercase, lowercase, number, and special character."
+)
+WORKSPACE_ROLE_PERMISSIONS = {
+    "admin": [
+        "workspace:read",
+        "workspace:write",
+        "lawyers:manage",
+        "matters:manage",
+        "analytics:read",
+        "research:read",
+        "drafts:read",
+    ],
+    "lawyer": [
+        "workspace:read",
+        "matters:read",
+        "matters:write",
+        "research:read",
+        "drafts:read",
+    ],
+}
 
 DEMO_LAWYERS = [
     {"name": "Asha Kapoor", "role": "Senior Litigation Counsel", "profile_picture": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=1200&auto=format&fit=crop", "bio": "Trial strategist focused on regulatory disputes, white-collar investigations, and appellate readiness for high-visibility matters."},
@@ -64,6 +83,76 @@ def _generate_firm_id():
     chars = string.ascii_uppercase + string.digits
     code = ''.join(random.choices(chars, k=6))
     return f"JA-{code}"
+
+
+def _parse_iso_datetime(raw: str) -> datetime:
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("Missing datetime value")
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _validate_password_strength(password: str) -> tuple[bool, str]:
+    candidate = password or ""
+    if len(candidate) < 10:
+        return False, PASSWORD_POLICY_MESSAGE
+    if not re.search(r"[A-Z]", candidate):
+        return False, PASSWORD_POLICY_MESSAGE
+    if not re.search(r"[a-z]", candidate):
+        return False, PASSWORD_POLICY_MESSAGE
+    if not re.search(r"\d", candidate):
+        return False, PASSWORD_POLICY_MESSAGE
+    if not re.search(r"[^A-Za-z0-9]", candidate):
+        return False, PASSWORD_POLICY_MESSAGE
+    return True, ""
+
+
+def _normalize_role(role: str) -> str:
+    role_value = (role or "").strip().lower()
+    if role_value in {"admin", "workspace_admin"}:
+        return "admin"
+    if role_value in {"lawyer", "associate", "user"}:
+        return "lawyer"
+    return "lawyer"
+
+
+def _workspace_permissions(role: str) -> list[str]:
+    return WORKSPACE_ROLE_PERMISSIONS.get(_normalize_role(role), WORKSPACE_ROLE_PERMISSIONS["lawyer"])
+
+
+def _default_avatar(name: str) -> str:
+    safe_name = (name or "JurisAI Lawyer").strip().replace(" ", "+")
+    return f"https://ui-avatars.com/api/?name={safe_name}"
+
+
+def _insert_optional_record(table_name: str, payload: dict) -> None:
+    try:
+        supabase.table(table_name).insert(payload).execute()
+    except Exception as exc:
+        logger.info("Optional insert skipped for %s: %s", table_name, exc)
+
+
+def _create_firm_record(firm_id: str, firm_name: str, admin_email: str, admin_name: str, created_at: str) -> None:
+    _insert_optional_record(
+        "firms",
+        {
+            "firm_id": firm_id,
+            "name": firm_name,
+            "workspace_name": firm_name,
+            "admin_email": admin_email,
+            "created_at": created_at,
+            "updated_at": created_at,
+            "branding_theme": "editorial-dark",
+            "status": "active",
+            "default_plan": "professional",
+            "owner_name": admin_name,
+        },
+    )
 
 
 def _firm_domain(firm_id: str) -> str:
@@ -147,102 +236,43 @@ def _build_seeded_case(template: dict, lawyer: dict, admin_id: str, firm_id: str
 
 
 def init_auth_db():
-    """Verify Supabase connection and seed the default admin, richer firm roster, and sample matters."""
+    """Verify Supabase connection and keep a single internal bootstrap admin available."""
     logger.info("Connecting to Supabase PostgreSQL...")
 
     try:
-        now = datetime.now(timezone.utc).isoformat()
-        res_admin = supabase.table("users").select("id, firm_id, firm_name").eq("email", DEFAULT_ADMIN_EMAIL).execute()
-        admin = res_admin.data[0] if res_admin.data else None
+        if not ENABLE_BOOTSTRAP_ADMIN:
+            logger.info("Bootstrap admin auto-provisioning is disabled.")
+            return
+        if not DEFAULT_ADMIN_EMAIL or not DEFAULT_ADMIN_PASSWORD:
+            logger.warning("Bootstrap admin is enabled but credentials are missing; skipping provision.")
+            return
+        is_valid, _ = _validate_password_strength(DEFAULT_ADMIN_PASSWORD)
+        if not is_valid:
+            logger.warning("Bootstrap admin password does not meet policy; skipping provision.")
+            return
 
-        if not admin:
-            admin_res = supabase.table("users").insert({
-                "name": "Admin",
+        now = datetime.now(timezone.utc).isoformat()
+        res_admin = supabase.table("users").select("id").eq("email", DEFAULT_ADMIN_EMAIL).execute()
+        if not res_admin.data:
+            supabase.table("users").insert({
+                "name": "Bootstrap Admin",
                 "email": DEFAULT_ADMIN_EMAIL,
                 "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
                 "role": "admin",
                 "plan": "enterprise",
                 "firm_id": DEFAULT_ADMIN_FIRM_ID,
                 "firm_name": DEFAULT_ADMIN_FIRM_NAME,
-                "profile_picture": "https://images.unsplash.com/photo-1552058544-f2b08422138a?q=80&w=1200&auto=format&fit=crop",
-                "bio": "Founding administrator for the LegalAI workspace.",
+                "profile_picture": _default_avatar("Bootstrap Admin"),
+                "bio": "Internal bootstrap administrator for workspace recovery only.",
                 "registered_at": now,
-                "created_at": now
+                "created_at": now,
             }).execute()
-            admin = admin_res.data[0] if admin_res.data else None
-            logger.info(f"Seeded default admin: {DEFAULT_ADMIN_EMAIL} / {DEFAULT_ADMIN_PASSWORD} | Firm ID: {DEFAULT_ADMIN_FIRM_ID}")
-
-        res_firms = supabase.table("users").select("id, firm_id, firm_name").eq("role", "admin").execute()
-
-        for firm_admin in (res_firms.data or []):
-            firm_id = firm_admin.get("firm_id")
-            firm_name = firm_admin.get("firm_name") or DEFAULT_ADMIN_FIRM_NAME
-            if not firm_id:
-                continue
-
-            users_res = supabase.table("users").select("id, email, name, role").eq("firm_id", firm_id).execute()
-            existing_users = users_res.data or []
-            existing_emails = {row.get("email", "").lower() for row in existing_users}
-            non_admin_users = [row for row in existing_users if row.get("role") != "admin"]
-
-            new_lawyers = []
-            lawyer_password_hash = hash_password(DEMO_LAWYER_PASSWORD)
-            for lawyer in DEMO_LAWYERS:
-                email = _email_from_name(lawyer["name"], firm_id).lower()
-                if email in existing_emails:
-                    continue
-                new_lawyers.append({
-                    "name": lawyer["name"],
-                    "email": email,
-                    "password_hash": lawyer_password_hash,
-                    "role": lawyer["role"],
-                    "plan": "enterprise",
-                    "firm_id": firm_id,
-                    "firm_name": firm_name,
-                    "profile_picture": lawyer["profile_picture"],
-                    "bio": lawyer["bio"],
-                    "registered_at": now,
-                    "created_at": now
-                })
-
-            inserted_lawyers = []
-            if new_lawyers and len(non_admin_users) < DEMO_TEAM_TARGET:
-                lawyer_res = supabase.table("users").insert(new_lawyers).execute()
-                inserted_lawyers = lawyer_res.data or []
-                logger.info(f"Seeded {len(inserted_lawyers)} demo lawyers for {firm_name} ({firm_id})")
-
-            lawyer_pool = [*non_admin_users, *inserted_lawyers]
-            if not lawyer_pool:
-                continue
-
-            case_count_res = supabase.table("lawyer_cases").select("id", count="exact").eq("firm_id", firm_id).execute()
-            existing_case_count = case_count_res.count if case_count_res.count is not None else 0
-            if existing_case_count >= DEMO_CASE_TARGET:
-                continue
-
-            cases_to_create = DEMO_CASE_TARGET - existing_case_count
-            seeded_cases = []
-            for index in range(cases_to_create):
-                template = CASE_TEMPLATES[index % len(CASE_TEMPLATES)]
-                lawyer = lawyer_pool[index % len(lawyer_pool)]
-                lawyer_email = lawyer.get("email")
-                if not lawyer_email:
-                    continue
-                seeded_cases.append(
-                    _build_seeded_case(
-                        template,
-                        {"name": lawyer.get("name") or lawyer_email, "email": lawyer_email},
-                        firm_admin.get("id") or (admin or {}).get("id") or "0",
-                        firm_id,
-                        existing_case_count + index,
-                        now,
-                    )
-                )
-
-            if seeded_cases:
-                supabase.table("lawyer_cases").insert(seeded_cases).execute()
-                logger.info(f"Seeded {len(seeded_cases)} demo cases for {firm_name} ({firm_id})")
-
+            _create_firm_record(DEFAULT_ADMIN_FIRM_ID, DEFAULT_ADMIN_FIRM_NAME, DEFAULT_ADMIN_EMAIL, "Bootstrap Admin", now)
+            logger.info(
+                "Provisioned bootstrap admin: %s | Firm ID: %s",
+                DEFAULT_ADMIN_EMAIL,
+                DEFAULT_ADMIN_FIRM_ID,
+            )
         logger.info("Supabase PostgreSQL Initialized Data Successfully")
     except Exception as e:
         logger.error(f"Failed to initialize Supabase db: {e}")
@@ -258,6 +288,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_token(user_id: str, name: str, role: str = "user", plan: str = "trial", firm_id: str = None, firm_name: str = None) -> str:
+    if not JWT_SECRET:
+        logger.error("JWT_SECRET is missing; token generation blocked.")
+        raise RuntimeError("JWT secret is not configured")
     payload = {
         "sub": str(user_id),
         "name": name,
@@ -279,7 +312,7 @@ def verify_token(token: str) -> dict:
 
 
 def _calc_trial_days_left(registered_at_str: str) -> int:
-    registered_at = datetime.fromisoformat(registered_at_str)
+    registered_at = _parse_iso_datetime(registered_at_str)
     trial_end = registered_at + timedelta(days=15)
     remaining = (trial_end - datetime.now(timezone.utc)).days
     return max(0, remaining)
@@ -299,53 +332,57 @@ def _log_activity(conn, user_id: int, action: str, details: str = ""):
 
 
 async def register_user(db_unused, name: str, email: str, password: str, plan: str = "trial", firm_name: str = "", firm_id: str = "", role: str = "user") -> dict:
-    """Register user in Supabase. Admins get a generated firm_id. Users can join a firm via firm_id."""
+    """Create a new workspace admin or add a lawyer to an existing firm."""
     import asyncio
     
     def _run_register():
         try:
-            res = supabase.table("users").select("id").eq("email", email).execute()
+            clean_name = (name or "").strip()
+            normalized_email = (email or "").strip().lower()
+            normalized_firm_id = (firm_id or "").strip().upper()
+            normalized_role = _normalize_role(role)
+            if not clean_name:
+                return {"error": "Name is required"}
+            if not normalized_email:
+                return {"error": "Email is required"}
+            if not (password or "").strip():
+                return {"error": "Password is required"}
+            is_valid, policy_error = _validate_password_strength(password)
+            if not is_valid:
+                return {"error": policy_error}
+            res = supabase.table("users").select("id").eq("email", normalized_email).execute()
             if res.data:
                 return {"error": "Email already registered"}
 
             now = datetime.now(timezone.utc).isoformat()
-            
-            # Determine role and firm
-            if role == "admin":
-                normalized_email = (email or "").strip().lower()
-                if normalized_email != DEFAULT_ADMIN_EMAIL.lower() or password != DEFAULT_ADMIN_PASSWORD:
-                    return {"error": "Direct administrator registration is disabled. Use the seeded Darwin administrator account."}
-                user_firm_id = DEFAULT_ADMIN_FIRM_ID
-                user_firm_name = DEFAULT_ADMIN_FIRM_NAME
+
+            if normalized_role == "admin" or not normalized_firm_id:
+                user_firm_id = normalized_firm_id or _generate_firm_id()
+                user_firm_name = (firm_name or f"{clean_name.split()[0]}'s Chambers").strip()
                 user_role = "admin"
-                user_plan = "enterprise"
-            elif role == "user":
-                if not firm_id:
-                    return {"error": "Firm ID is required to join a workspace."}
-                
-                res_firm = supabase.table("users").select("firm_id, firm_name").eq("firm_id", firm_id).eq("role", "admin").execute()
-                if not res_firm.data:
-                    return {"error": f"Invalid Firm ID '{firm_id}'. This workspace does not exist."}
-                
-                firm_admin = res_firm.data[0]
-                user_firm_id = firm_id
-                user_firm_name = firm_admin["firm_name"]
-                user_role = "user"
                 user_plan = plan or "professional"
+                _create_firm_record(user_firm_id, user_firm_name, normalized_email, clean_name, now)
             else:
-                return {"error": "Invalid role specified."}
+                res_firm = supabase.table("users").select("firm_id, firm_name").eq("firm_id", normalized_firm_id).eq("role", "admin").execute()
+                if not res_firm.data:
+                    return {"error": f"Invalid firm ID '{normalized_firm_id}'. This workspace does not exist."}
+                firm_admin = res_firm.data[0]
+                user_firm_id = normalized_firm_id
+                user_firm_name = firm_admin.get("firm_name") or firm_name or "JurisAI Workspace"
+                user_role = "lawyer"
+                user_plan = plan or "professional"
 
             insert_res = supabase.table("users").insert({
-                "name": name, 
-                "email": email, 
-                "password_hash": hash_password(password), 
-                "role": user_role, 
-                "plan": user_plan, 
-                "firm_id": user_firm_id, 
-                "firm_name": user_firm_name, 
-                "profile_picture": f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}",
-                "bio": "Legal Counsel",
-                "registered_at": now, 
+                "name": clean_name,
+                "email": normalized_email,
+                "password_hash": hash_password(password),
+                "role": user_role,
+                "plan": user_plan,
+                "firm_id": user_firm_id,
+                "firm_name": user_firm_name,
+                "profile_picture": _default_avatar(name),
+                "bio": "Workspace administrator" if user_role == "admin" else "Legal counsel",
+                "registered_at": now,
                 "created_at": now
             }).execute()
             
@@ -356,22 +393,60 @@ async def register_user(db_unused, name: str, email: str, password: str, plan: s
                     supabase.table("events").insert({
                         "user_id": user_data["id"],
                         "event_type": "register",
-                        "metadata": f"Registered as {user_role}",
+                        "metadata": f"Registered as {user_role} in {user_firm_name}",
                         "timestamp": now
                     }).execute()
                 except Exception as e:
                     logger.warning(f"Failed to log register event: {e}")
+
+                if user_role == "lawyer":
+                    _insert_optional_record(
+                        "lawyer_profiles",
+                        {
+                            "user_id": user_data["id"],
+                            "firm_id": user_firm_id,
+                            "title": "Associate",
+                            "practice_areas": [],
+                            "bio": "Legal counsel",
+                            "created_at": now,
+                            "updated_at": now,
+                            "status": "active",
+                        },
+                    )
+                    admin_res = (
+                        supabase.table("users")
+                        .select("email")
+                        .eq("firm_id", user_firm_id)
+                        .eq("role", "admin")
+                        .limit(1)
+                        .execute()
+                    )
+                    admin_email = admin_res.data[0]["email"] if admin_res.data else ""
+                    if admin_email:
+                        _insert_optional_record(
+                            "notifications",
+                            {
+                                "user_email": admin_email,
+                                "title": "Lawyer Joined Workspace",
+                                "message": f"{name} ({normalized_email}) joined your workspace using code {user_firm_id}.",
+                                "is_read": False,
+                                "created_at": now,
+                                "firm_id": user_firm_id,
+                                "notification_type": "workspace_update",
+                            },
+                        )
             
             trial_days = 15 if user_plan == "trial" else -1
             return {
                 "success": True,
-                "message": "Registration successful. Please login.",
-                "user_name": name,
-                "plan": user_plan, 
-                "trial_days_left": trial_days, 
+                "message": "Workspace created successfully. Please log in.",
+                "user_name": clean_name,
+                "plan": user_plan,
+                "trial_days_left": trial_days,
                 "role": user_role,
                 "firm_id": user_firm_id or "",
-                "firm_name": user_firm_name or ""
+                "firm_name": user_firm_name or "",
+                "permissions": _workspace_permissions(user_role),
             }
         except Exception as e:
             logger.error(f"Registration error: {e}")
@@ -386,16 +461,25 @@ async def login_user(db_unused, email: str, password: str) -> dict:
 
     def _run_login():
         try:
-            res = supabase.table("users").select("*").eq("email", email).execute()
+            normalized_email = (email or "").strip().lower()
+            if not normalized_email:
+                return {"error": "Email is required"}
+            if not (password or "").strip():
+                return {"error": "Password is required"}
+            logger.info("Login attempt for email: %s", normalized_email)
+            res = supabase.table("users").select("*").eq("email", normalized_email).execute()
             if not res.data:
+                logger.info("Login failed: user not found for %s", normalized_email)
                 return {"error": "Invalid email or password"}
                 
             user = res.data[0]
             if not verify_password(password, user["password_hash"]):
+                logger.info("Login failed: password mismatch for %s", normalized_email)
                 return {"error": "Invalid email or password"}
+            logger.info("Login successful for %s", normalized_email)
 
             plan = user["plan"]
-            role = user.get("role", "user")
+            role = _normalize_role(user.get("role", "lawyer"))
             firm_id = user.get("firm_id", "")
             firm_name = user.get("firm_name", "")
             trial_days = _calc_trial_days_left(user["registered_at"]) if plan == "trial" else -1
@@ -419,7 +503,10 @@ async def login_user(db_unused, email: str, password: str) -> dict:
             return {
                 "access_token": token, "token_type": "bearer", "user_name": user["name"],
                 "plan": plan, "trial_days_left": trial_days, "role": role,
-                "firm_id": firm_id or "", "firm_name": firm_name or ""
+                "firm_id": firm_id or "", "firm_name": firm_name or "",
+                "profile_picture": user.get("profile_picture", ""),
+                "bio": user.get("bio", ""),
+                "permissions": _workspace_permissions(role),
             }
         except Exception as e:
             logger.error(f"Login error: {e}")
@@ -439,12 +526,13 @@ async def get_user_info(user_id: str) -> dict:
                 return None
             user = res.data[0]
             plan = user["plan"]
-            role = user.get("role", "user")
+            role = _normalize_role(user.get("role", "lawyer"))
             firm_id = user.get("firm_id", "")
             firm_name = user.get("firm_name", "")
             trial_days = _calc_trial_days_left(user["registered_at"]) if plan == "trial" else -1
             return {
                 "user_name": user["name"],
+                "name": user["name"],
                 "email": user["email"],
                 "plan": plan,
                 "role": role,
@@ -453,13 +541,109 @@ async def get_user_info(user_id: str) -> dict:
                 "trial_days_left": trial_days,
                 "profile_picture": user.get("profile_picture", ""),
                 "bio": user.get("bio", ""),
-                "registered_at": user["registered_at"]
+                "registered_at": user["registered_at"],
+                "permissions": _workspace_permissions(role),
+                "workspace": {
+                    "firm_id": firm_id or "",
+                    "firm_name": firm_name or "",
+                    "role": role,
+                },
             }
         except Exception as e:
             logger.error(f"Get User Info Error: {e}")
             return None
             
     return await asyncio.to_thread(_run_get_info)
+
+
+async def create_lawyer_user(admin_payload: dict, name: str, email: str, password: str, title: str = "Associate", practice_areas: list | None = None, bio: str = "", profile_picture: str = "", plan: str = "professional") -> dict:
+    """Create a firm-scoped lawyer from an admin workspace."""
+    import asyncio
+
+    def _run_create():
+        normalized_email = (email or "").strip().lower()
+        is_valid, policy_error = _validate_password_strength(password)
+        if not is_valid:
+            return {"error": policy_error}
+        firm_id = admin_payload.get("firm_id", "")
+        firm_name = admin_payload.get("firm_name", "")
+        if not firm_id:
+            return {"error": "Admin workspace is missing a firm ID."}
+
+        existing = supabase.table("users").select("id").eq("email", normalized_email).execute()
+        if existing.data:
+            return {"error": "Email already registered"}
+
+        now = datetime.now(timezone.utc).isoformat()
+        insert_res = supabase.table("users").insert({
+            "name": name,
+            "email": normalized_email,
+            "password_hash": hash_password(password),
+            "role": "lawyer",
+            "plan": plan or "professional",
+            "firm_id": firm_id,
+            "firm_name": firm_name,
+            "profile_picture": profile_picture or _default_avatar(name),
+            "bio": bio or f"{title} at {firm_name}",
+            "registered_at": now,
+            "created_at": now,
+        }).execute()
+        user_data = insert_res.data[0] if insert_res.data else None
+        if not user_data:
+            return {"error": "Failed to create lawyer user"}
+
+        _insert_optional_record(
+            "lawyer_profiles",
+            {
+                "user_id": user_data["id"],
+                "firm_id": firm_id,
+                "title": title,
+                "practice_areas": practice_areas or [],
+                "bio": bio or f"{title} at {firm_name}",
+                "photo_url": profile_picture or _default_avatar(name),
+                "created_at": now,
+                "updated_at": now,
+                "status": "active",
+            },
+        )
+        _insert_optional_record(
+            "notifications",
+            {
+                "user_email": normalized_email,
+                "title": "Workspace access granted",
+                "message": f"You have been added to {firm_name} and can now access matters assigned to you.",
+                "is_read": False,
+                "created_at": now,
+                "firm_id": firm_id,
+                "notification_type": "assignment",
+            },
+        )
+        try:
+            supabase.table("events").insert({
+                "user_id": admin_payload.get("sub"),
+                "event_type": "lawyer_created",
+                "metadata": f"Created lawyer {normalized_email} in {firm_name}",
+                "timestamp": now,
+            }).execute()
+        except Exception as exc:
+            logger.warning("Failed to log lawyer creation event: %s", exc)
+
+        return {
+            "success": True,
+            "user": {
+                "id": user_data["id"],
+                "name": name,
+                "email": normalized_email,
+                "role": "lawyer",
+                "firm_id": firm_id,
+                "firm_name": firm_name,
+                "profile_picture": profile_picture or _default_avatar(name),
+                "bio": bio or f"{title} at {firm_name}",
+                "permissions": _workspace_permissions("lawyer"),
+            },
+        }
+
+    return await asyncio.to_thread(_run_create)
 
 
 # --- Admin Functions ---
@@ -476,7 +660,7 @@ async def list_all_users() -> list:
                 "id": row["id"],
                 "name": row["name"],
                 "email": row["email"],
-                "role": row.get("role", "user"),
+                "role": _normalize_role(row.get("role", "lawyer")),
                 "plan": plan,
                 "firm_id": row.get("firm_id", ""),
                 "firm_name": row.get("firm_name", ""),
@@ -502,8 +686,10 @@ async def get_firm_users(firm_id: str) -> list:
                 "id": row["id"],
                 "name": row["name"],
                 "email": row["email"],
-                "role": row.get("role", "user"),
+                "role": _normalize_role(row.get("role", "lawyer")),
                 "plan": plan,
+                "firm_id": row.get("firm_id", ""),
+                "firm_name": row.get("firm_name", ""),
                 "trial_days_left": trial_days,
                 "registered_at": row["registered_at"],
                 "created_at": row["created_at"]

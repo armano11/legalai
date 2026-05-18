@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    command: serve
+    profiles:
+      - ai
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/chroma_db:/app/chroma_db
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - AI_ENABLE_LOCAL_FALLBACK=true
+    depends_on:
+      - ollama
+    profiles:
+      - api
+
+  frontend:
+    build: .
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    profiles:
+      - web
+
+volumes:
+  ollama_data:
+
+    # Usage:
+    # docker compose up backend frontend  # dev
+    # docker compose up --profile ai backend frontend  # + ollama
+    # docker compose down -v  # cleanup
+

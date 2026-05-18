@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import time
 
 from config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_BACKUP_MODEL, APP_CORE_TOKEN
 
@@ -62,7 +63,48 @@ def _call_ollama(prompt: str, max_tokens: int = 2000, model_name: str = OLLAMA_M
         logger.warning(f"Ollama {model_name} error: {e}")
         return None
     return None
-def _call_neural_node(prompt: str, max_tokens: int = 2000) -> str:
+
+
+def _stream_ollama(prompt: str, max_tokens: int = 1200, model_name: str = OLLAMA_MODEL, timeout: int = 90):
+    """Stream raw text chunks from Ollama as they are generated."""
+    try:
+        with requests.post(OLLAMA_URL, json={
+            "model": model_name,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": 0.1,
+                "num_ctx": 3072,
+                "num_thread": 8,
+                "top_p": 0.9
+            }
+        }, timeout=timeout, stream=True) as resp:
+            if resp.status_code != 200:
+                logger.warning("Ollama streaming failed for %s with status %s", model_name, resp.status_code)
+                return
+
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line.decode("utf-8"))
+                except Exception:
+                    continue
+
+                chunk = payload.get("response", "")
+                if chunk:
+                    yield chunk
+
+                if payload.get("done"):
+                    return
+    except requests.exceptions.Timeout:
+        logger.warning("Ollama %s streaming timeout after %ss", model_name, timeout)
+    except requests.exceptions.ConnectionError:
+        logger.warning("Ollama not running - streaming skipped")
+    except Exception as e:
+        logger.warning(f"Ollama {model_name} streaming error: {e}")
+def _call_neural_node(prompt: str, max_tokens: int = 2000, total_timeout_s: int = 25) -> str:
     """Calls internal neural processing node using auto-cascade fallback."""
     import requests
 
@@ -78,26 +120,28 @@ def _call_neural_node(prompt: str, max_tokens: int = 2000) -> str:
             "Content-Type": "application/json"
         }
         
-        # Cascade array ordered by provider stability
+        # Cascade array — auto-updated to currently available free models
         fallback_models = [
-            "qwen/qwen3-next-80b-a3b-instruct:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemma-4-31b-it:free",
             "nvidia/nemotron-3-super-120b-a12b:free",
-            "google/gemini-2.0-flash-exp:free",
-            "deepseek/deepseek-chat:free",
-            "qwen/qwen-2.5-coder-32b-instruct:free",
-            "mistralai/mistral-nemo:free",
-            "meta-llama/llama-3.1-8b-instruct:free"
+            "openai/gpt-oss-120b:free",
+            "qwen/qwen3-coder:free",
+            "minimax/minimax-m2.5:free",
         ]
         
+        import time
+        start = time.monotonic()
         for model in fallback_models:
+            if (time.monotonic() - start) >= max(total_timeout_s, 5):
+                logger.warning("Neural routing timed out after %ss total budget", total_timeout_s)
+                break
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}]
             }
             try:
                 logger.info(f"Targeting Node: {model}...")
-                resp = requests.post(_u, headers=headers, json=payload, timeout=45)
+                resp = requests.post(_u, headers=headers, json=payload, timeout=8)
                 if resp.status_code == 200:
                     result = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                     if result:
@@ -165,24 +209,25 @@ def _internal_deep_processing(query: str, context: str = None) -> dict:
     """Generate structured research processing using internal neural engine."""
     prompt = f"""You are a Super-Advanced Legal Research AI System in India (combining the reasoning of multiple PhD-level experts). Perform an EXHAUSTIVE, DEEP-DIVE legal analysis on the query provided, using the context if available.
 
-OBJECTIVE: Produce a fully realistic, citation-backed, 'Super Researched' legal brief that represents the absolute pinnacle of legal analysis.
+OBJECTIVE: Produce a fully realistic, citation-backed, 'Super Researched' legal brief combining the provided Database Matches, Live Web Search Data, and your own advanced AI legal knowledge.
 
 CONTEXT: {context or "Use exhaustive knowledge of Indian Law statutes and precedents"}
 QUERY: {query}
 
 RULES:
-1.  **Strictly Professional & In-Depth**: Use highly formal legal language. Do not mention you are an AI. Go into extreme depth for every aspect of the law.
-2.  **No Hallucinations**: Focus on landmark apex court precedents and precise statutory parsing. Combine the best case law to show extremely advanced research.
-3.  **High Density**: Every field in the JSON MUST be populated heavily. No "N/A" or empty arrays. Write extensive paragraphs.
-4.  **Synthesis Detail**: The 'synthesis' must be a masive 6-8 paragraph comprehensive brief covering:
-    - Factual Overview & Micro-classification of the matter.
-    - Exhaustive Statutory Analysis (primary acts/sections, provisos, and exceptions).
-    - Deep Judicial Trends (how courts usually ruled on similar facts, analyzing ratio decidendi).
-    - Concluding Legal Opinion, Risk Matrix & Elite Litigation Strategy.
+1.  **Strict Context Mastery**: The provided dataset snippets ([DATABASE MATCHES], [WEB SEARCH DATA]) MUST form the absolute core of the facts. Do not summarize briefly. Expand aggressively upon every provided fact and combine it with your colossal [AI KNOWLEDGE].
+2.  **No Random Outcomes**: Do not invent precedents. Draw deeply on landmark cases related to the given facts. If the snippet provided is thin, use your deep legal intelligence to extrapolate logical, realistic legal frameworks.
+3.  **Maximum Density (The more, the better)**: Your response must be an absolute powerhouse 15-20 paragraph markdown document. Leave utterly NO stone unturned.
+4.  **Structured Synthesis Detail**: The 'synthesis' MUST be divided with rich Markdown styling (## Headers, **Bold**, > Blockquotes) into the following explicit sections:
+    - **## Comprehensive Factual Assessment**: Detailed overview and micro-classification.
+    - **## Detailed Statutory Matrix**: Exhaustive parsing of acts/sections, provisos, exceptions.
+    - **## Precedential Strengths (Strong Points)**: How landmark cases powerfully support the query's implicit side.
+    - **## Vulnerabilities & Risk Constraints (Weak Points)**: Evidentiary hurdles, procedural delays, hostile precedents.
+    - **## Elite Strategic Opinion & Next Steps**: What a tier-1 firm would do right now.
 
 Respond ONLY with valid JSON:
 {{
-  "synthesis": "Comprehensive multi-paragraph legal brief...",
+  "synthesis": "## Comprehensive Factual Assessment\n\nThe instant matter demands an intense granular viewing...\n\n### Detailed Statutory Matrix\n- **Section XXX**: ...\n\n## Precedential Strengths...",
   "penal_codes": [
     {{"code": "Section 302 IPC", "title": "Punishment for Murder", "description": "Applicable where there is intention to cause death or bodily injury likely to cause death.", "severity": "serious", "punishment": "Death or Life Imprisonment + Fine"}}
   ],
@@ -225,49 +270,95 @@ Respond ONLY with valid JSON:
     return _build_static_research(query)
 
 
-def generate_contract_analysis(contract_text: str) -> dict:
-    """Analyze contract text using DeepSeek R1."""
-    prompt = f"""Analyze the following contract text for legal risks, missing clauses, and overall fairness. 
-Do not mention you are an AI. Provide a professional legal audit.
+def _call_nvidia_api(prompt: str, max_tokens: int = 2000) -> str:
+    """Call NVIDIA API directly (Gemma 3n / GLM) for document analysis."""
+    from config import NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_DOCUMENT_MODEL
+    if not NVIDIA_API_KEY:
+        return None
+    try:
+        resp = requests.post(
+            f"{NVIDIA_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {NVIDIA_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": NVIDIA_DOCUMENT_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.20,
+                "top_p": 0.70,
+                "stream": False
+            },
+            timeout=30
+        )
+        if resp.status_code == 200:
+            result = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if result:
+                logger.info(f"NVIDIA ({NVIDIA_DOCUMENT_MODEL}) responded ({len(result)} chars)")
+                return result
+        else:
+            logger.warning(f"NVIDIA API returned {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"NVIDIA API error: {e}")
+    return None
 
-Contract Text Sample:
-{contract_text[:4000]}
 
-Respond ONLY with valid JSON in this format:
-{{
-  "audit_summary": "High level audit summary...",
-  "risk_detections": [
-    {{"clause": "Snippet", "risk_level": "high/medium/low", "issue": "Reasoning", "recommendation": "Fix"}}
-  ],
-  "missing_critical_clauses": [
-    {{"clause_name": "Name", "importance": "Why it's needed"}}
-  ],
-  "fairness_score": 75,
-  "overall_verdict": "Clear verdict"
-}}"""
+async def generate_neural_document_audit(text: str, doc_type: str, findings: list) -> dict:
+    """Perform deep neural audit of any legal document (FIR, Contract, Petition, etc.)"""
+    import asyncio
+    prompt = f"""You are a Senior Legal Forensic Auditor in India. Perform an EXHAUSTIVE, 'Neural Audit' of the following {doc_type}.
+    
+    TRANSCRIPT / TEXT:
+    {text[:3500]}
+    
+    DETERMINISTIC FINDINGS (EXTRACTED MANUALLY):
+    {json.dumps(findings, indent=2)}
+    
+    OBJECTIVE: Synthesize the deterministic findings into a brilliant, high-density legal report.
+    
+    RULES:
+    1. **Neural Audit**: Write a professional multi-paragraph executive analysis explaining purpose, enforceability posture, and key legal pressure points.
+    2. **Strategic Insights**: Provide 5-6 elite-level litigation, drafting, filing, or negotiation recommendations grounded in the text.
+    3. **Structural Map**: Provide a 4-point breakdown of Liability, Financial Exposure, Governance, and Dispute Resolution specifically for this {doc_type}.
+    4. **Missing Elements**: Mention the most material omissions or drafting gaps.
+    5. Maintain a real legal-product tone, not generic AI wording.
+    
+    Respond ONLY with valid JSON:
+    {{
+      "neural_audit": "Detailed multi-paragraph analysis...",
+      "strategic_insights": ["Insight 1", "Insight 2", "Insight 3", "Insight 4", "Insight 5"],
+      "structural_map": {{
+        "Liability Profile": "Deep analysis of liability...",
+        "Financial Exposure": "Analysis of monetary risks...",
+        "Governance & Control": "Analysis of operational rights...",
+        "Dispute Resolution": "Analysis of forum/jurisdiction risk..."
+      }},
+      "missing_elements": ["List of critical gaps"],
+      "structural_integrity_score": 85
+    }}"""
 
-    # Try Neural Engine First
-    result = _call_neural_node(prompt, max_tokens=2500)
+    # Try NVIDIA Gemma API First (dedicated paper analysis engine)
+    result = await asyncio.to_thread(_call_nvidia_api, prompt, 3500)
+    if result:
+        parsed = _try_parse_json(result)
+        if parsed:
+            logger.info("Neural audit completed via NVIDIA Gemma API")
+            return parsed
+
+    # Try OpenRouter Neural Engine
+    result = await asyncio.to_thread(_call_neural_node, prompt, 3500)
     if result:
         parsed = _try_parse_json(result)
         if parsed:
             return parsed
 
     # Try Ollama (Backup)
-    result = _call_ollama(prompt, max_tokens=3000, model_name=OLLAMA_BACKUP_MODEL)
+    result = await asyncio.to_thread(_call_ollama, prompt, 2500, OLLAMA_BACKUP_MODEL)
     if result:
         parsed = _try_parse_json(result)
         if parsed:
             return parsed
 
-    # Try HuggingFace
-    result = _call_hf(prompt, max_tokens=2000)
-    if result:
-        parsed = _try_parse_json(result)
-        if parsed:
-            return parsed
+    return None
 
-    return _build_static_research(query)
 
 def _internal_synthesis_engine(query: str, context: str = None) -> dict:
     """Generate just the synthesis and risk assessment using internal engine."""
@@ -281,7 +372,7 @@ OBJECTIVE: Create a high-quality "Summary of Analysis" that integrates the retri
 
 Respond ONLY with valid JSON:
 {{
-  "synthesis": "A 4-5 paragraph expert synthesis. Paragraph 1: Legal classification. Paragraph 2: Statutory framework. Paragraph 3: Precedential analysis from context. Paragraph 4: Risk and procedural outlook. Paragraph 5: Final recommendation.",
+  "synthesis": "## Legal Opinion\n\nA 4-5 paragraph expert synthesis using rich **Markdown** formatting. Use bolding for precise terminology, blockquotes for key citations, and bullet points to break down the statutory matrix and risk outlook.",
   "risk_assessment": {{
     "strength": "strong/moderate/weak",
     "score": 75,
@@ -404,3 +495,100 @@ def _build_static_research(query: str) -> dict:
             "factors_against": ["Detailed facts needed for accurate assessment", "JurisCore engine offline for comprehensive analysis"]
         }
     }
+
+def stream_deep_processing(query: str, context: str = None):
+    """Perplexity-style streaming legal research: word-by-word NVIDIA + Mermaid diagrams + multi-source."""
+
+    from services.ai_gateway import _nvidia_stream, NVIDIA_RESEARCH_MODEL, AI_ENABLE_MANAGED_MODELS
+    from ai.rag_pipeline import search_legal
+    from services.firecrawl_service import firecrawl_search
+
+    # Multi-source data fetch (non-blocking, but sequential for simplicity)
+    yield f"## Starting Perplexity-Style Research Pipeline\\n"
+    yield "🔍 Query: **" + query + "**\\n\\n"
+
+    # Stage 1: Firecrawl web
+    web_results = firecrawl_search(query, 3)
+    yield "**Stage 1: Live Web Search** (Firecrawl)\\n"
+    if web_results:
+        for r in web_results:
+            yield f"- [{r['title']}]({r['url']})\\n"
+        web_ctx = '\\n'.join([r['snippet'] for r in web_results])
+    else:
+        web_ctx = 'No live web results.'
+        yield "- No live web sources found (Docker Firecrawl ready)\\n"
+    yield "\\n"
+
+    # Stage 2: RAG database
+    rag_results = search_legal(query)
+    rag_ctx = rag_results.get('context_for_ai', '')[:2000]
+    yield "**Stage 2: RAG Database** (Chroma)\\n"
+    if rag_results.get('results'):
+        for r in rag_results['results'][:3]:
+            yield f"- {r.get('case_title', 'Legal Authority')} ({r.get('relevance', 0)})\\n"
+    else:
+        yield "- Knowledge base query\\n"
+    yield "\\n"
+
+    # Full context for NVIDIA
+    full_context = f"DATABASE: {rag_ctx}\\nWEB: {web_ctx}"
+    
+    # Perplexity prompt with Mermaid requirement
+    system = """You are LexisAI - Perplexity.ai for Indian Law.
+
+Format: Markdown with ## Headers.
+
+**Required Sections**:
+1. ## Executive Answer (2-3 sentences)
+2. ## Facts & Context
+3. ## Statutes (sections/explanations)
+4. ## Precedents (cases/principles)
+5. ## Risk Matrix (strengths/weaknesses)
+6. ## Mermaid Visual (flowchart OR pie chart for risks)
+7. ## Next Steps (numbered)
+
+**Mermaid Examples**:
+```mermaid
+flowchart TD
+A[FIR] --> B[Investigation]
+```
+OR
+```mermaid
+pie title Risk Breakdown
+ "Statutory" : 60
+ "Precedent" : 25
+ "Procedural" : 15
+```
+
+Use raw context. Stream tokens. No ``` blocks for Mermaid."""
+
+    prompt = f"Query: {query}\\nContext: {full_context[:4000]}\\n\\nGenerate Perplexity report."
+
+    # NVIDIA stream
+    if AI_ENABLE_MANAGED_MODELS:
+        try:
+            yield "**Stage 3: NVIDIA GLM-5.1 Synthesis** (streaming)\\n"
+            for chunk in _nvidia_stream(prompt, system, NVIDIA_RESEARCH_MODEL, temperature=0.15, max_tokens=3200):
+                yield chunk
+            yield "\\n\\n✅ Perplexity-Style Report Complete!"
+            return
+        except Exception as e:
+            yield f" NVIDIA stream error: {str(e)}\\n"
+    
+    # Fallback
+    yield "**Fallback: Local Ollama**\\n"
+    for chunk in _stream_ollama(f"Perplexity legal report for: {query}\\nContext: {full_context[:2500]}", max_tokens=2500):
+        yield chunk
+
+
+def _yield_markdown_chunks(text: str, chunk_size: int = 260):
+
+    """Yield markdown in readable chunks so the UI can progressively render local-model output."""
+    if not text:
+        return
+    paragraphs = [p for p in text.split("\n\n") if p.strip()]
+    for paragraph in paragraphs:
+        line = paragraph.strip()
+        for i in range(0, len(line), chunk_size):
+            yield line[i:i + chunk_size] + ("\n\n" if i + chunk_size >= len(line) else "")
+            time.sleep(0.01)

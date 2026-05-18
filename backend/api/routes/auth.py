@@ -96,4 +96,4 @@ async def update_profile(data: ProfileUpdate, authorization: str = Header(None))
         return {"message": "Profile updated successfully"}
     except Exception as e:
         logger.error(f"Profile update failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Profile update failed")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, Activity, FileText, Search, Shield, Copy, 
@@ -24,15 +24,7 @@ export default function AdminDashboard() {
   const { token, user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!isAdmin()) {
-      navigate('/dashboard');
-      return;
-    }
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -53,7 +45,15 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!isAdmin()) {
+      navigate('/dashboard');
+      return;
+    }
+    loadData();
+  }, [isAdmin, loadData, navigate]);
 
   const viewUserActivity = async (userId) => {
     setSelectedUserId(userId);
@@ -114,17 +114,17 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="container mx-auto px-6 lg:px-8 py-24 min-h-screen bg-[#000000]">
+    <div className="container mx-auto px-6 lg:px-8 py-24 min-h-screen bg-background">
       
       {/* HEADER */}
       <motion.div initial="hidden" animate="visible" variants={fadeUp} className="mb-14 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 relative z-10">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-primary/5 mb-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-primary/5 px-3 py-1 mb-4">
             <Shield className="w-3 h-3 text-foreground/60" />
-            <span className="text-[10px] font-black text-foreground/60 uppercase tracking-[0.2em]">Administrative Console</span>
+            <span className="text-[10px] font-black text-foreground/60 uppercase tracking-[0.14em]">Firm Admin</span>
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-foreground mb-1">{user?.firm_name || 'System Admin'}</h1>
-          <p className="text-foreground/40 font-medium">Manage permissions, users, and platform-wide analytics.</p>
+          <p className="text-foreground/40 font-medium">Manage your team, review incoming work, and keep the firm moving.</p>
         </div>
         <div className="flex items-center gap-4">
           {user?.firm_id && (
@@ -146,7 +146,7 @@ export default function AdminDashboard() {
           <motion.div 
             key={stat.label}
             initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: i * 0.05 }}
-            className="p-5 rounded-2xl border border-white/5 bg-[#050505] hover:border-white/15 transition-all group"
+            className="rounded-lg border border-white/5 bg-[#050505] p-5 transition-all group hover:border-white/15"
           >
             <div className="p-2.5 rounded-xl bg-primary/5 border border-border inline-block mb-6">
               <stat.icon className="w-5 h-5 text-foreground/40 group-hover:text-foreground transition-colors" />
@@ -158,7 +158,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* TABS */}
-      <div className="flex gap-2 p-2 bg-[#050505] rounded-2xl border border-white/5 mb-10 overflow-x-auto">
+      <div className="mb-10 flex gap-2 overflow-x-auto rounded-lg border border-white/5 bg-[#050505] p-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -176,9 +176,9 @@ export default function AdminDashboard() {
       <div className="relative z-10">
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <motion.div initial="hidden" animate="visible" variants={fadeUp} className="p-10 rounded-[2.5rem] border border-white/5 bg-[#050505] h-[400px] flex flex-col">
-              <h3 className="text-[10px] font-black text-foreground/30 mb-8 uppercase tracking-[0.3em] flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" /> VOLUME_ANALYSIS
+            <motion.div initial="hidden" animate="visible" variants={fadeUp} className="flex h-[400px] flex-col rounded-lg border border-white/5 bg-[#050505] p-10">
+              <h3 className="mb-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-foreground/30">
+                <TrendingUp className="w-4 h-4" /> Search Activity
               </h3>
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -198,9 +198,9 @@ export default function AdminDashboard() {
               </div>
             </motion.div>
 
-            <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.1 }} className="p-10 rounded-[2.5rem] border border-white/5 bg-[#050505] max-h-[400px] overflow-y-auto">
-              <h3 className="text-[10px] font-black text-foreground/30 mb-6 uppercase tracking-[0.3em] flex items-center gap-2">
-                <Activity className="w-4 h-4" /> REALTIME_STREAM
+            <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.1 }} className="max-h-[400px] overflow-y-auto rounded-lg border border-white/5 bg-[#050505] p-10">
+              <h3 className="mb-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-foreground/30">
+                <Activity className="w-4 h-4" /> Recent Activity
               </h3>
               {activities.length === 0 ? (
                 <p className="text-foreground/20 text-xs text-center py-12 italic">No activity detected.</p>
@@ -224,10 +224,10 @@ export default function AdminDashboard() {
 
         {(activeTab === 'members' || activeTab === 'all-users') && (
           <div className="flex flex-col lg:flex-row gap-8">
-            <motion.div initial="hidden" animate="visible" variants={fadeUp} className="flex-1 rounded-[2.5rem] border border-white/5 bg-[#050505] overflow-hidden shadow-2xl">
+            <motion.div initial="hidden" animate="visible" variants={fadeUp} className="flex-1 overflow-hidden rounded-lg border border-white/5 bg-[#050505] shadow-2xl">
               <div className="p-8 border-b border-white/5 flex justify-between items-center bg-primary/[0.01]">
-                <h3 className="text-[10px] font-black text-foreground/40 uppercase tracking-[0.3em]">
-                  {activeTab === 'members' ? 'Firm Registry' : 'Global User Base'}
+                <h3 className="text-[10px] font-black text-foreground/40 uppercase tracking-[0.16em]">
+                  {activeTab === 'members' ? 'Firm Members' : 'All Users'}
                 </h3>
               </div>
               <div className="overflow-x-auto">
@@ -292,8 +292,8 @@ export default function AdminDashboard() {
                   initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
                   className="w-96 rounded-[2.5rem] border border-border bg-[#050505] overflow-hidden shrink-0 shadow-2xl h-fit sticky top-32"
                 >
-                  <div className="p-6 border-b border-white/5 flex justify-between items-center bg-primary/[0.01]">
-                    <h3 className="text-[10px] font-black text-foreground uppercase tracking-widest italic">Operational Logs</h3>
+                  <div className="flex items-center justify-between border-b border-white/5 bg-primary/[0.01] p-6">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-foreground">User Activity</h3>
                     <button onClick={() => setSelectedUserId(null)} className="text-foreground/20 hover:text-foreground transition-colors">
                        <ArrowUpRight className="w-4 h-4 rotate-180" />
                     </button>

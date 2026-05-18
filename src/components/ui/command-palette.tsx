@@ -15,9 +15,9 @@ interface CommandAction {
 }
 
 const ACTIONS: CommandAction[] = [
-  { id: "research", title: "Legal Research", subtitle: "Neural case law synthesis", icon: Globe, path: "/research", category: "Core Modules" },
-  { id: "analyze", title: "Paper Analyzer", subtitle: "Structural contract audit", icon: FileText, path: "/contracts", category: "Core Modules" },
-  { id: "draft", title: "Draft Generator", subtitle: "Context-aware drafting", icon: Scale, path: "/drafts", category: "Core Modules" },
+  { id: "research", title: "Legal Research", subtitle: "Case law research & synthesis", icon: Globe, path: "/research", category: "Core Modules" },
+  { id: "analyze", title: "Paper Analyzer", subtitle: "Use upload inside Research", icon: FileText, path: "/research", category: "Core Modules" },
+  { id: "draft", title: "Drafting (Research)", subtitle: "Generate drafts inside research", icon: Scale, path: "/research", category: "Core Modules" },
   { id: "cases", title: "Case Tracker", subtitle: "Kanban litigation management", icon: Briefcase, path: "/cases", category: "Core Modules" },
   { id: "analytics", title: "Firm Analytics", subtitle: "Performance telemetry", icon: BarChart3, path: "/analytics", category: "Intelligence" },
   { id: "lawyers", title: "Lawyer Directory", subtitle: "Professional network hub", icon: Users, path: "/lawyers", category: "Intelligence" },

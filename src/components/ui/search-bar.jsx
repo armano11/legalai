@@ -17,6 +17,11 @@ const SUGGESTIONS = [
   "Hindu Marriage Act divorce grounds"
 ]
 
+const deterministicUnit = (index, salt = 1) => {
+  const v = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453
+  return v - Math.floor(v)
+}
+
 const GooeyFilter = () => (
   <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
     <defs>
@@ -123,50 +128,63 @@ export function SearchBar({ placeholder = "Search JurisCore™ Intelligence...",
     }),
   }
 
-  const particles = Array.from({ length: isFocused ? 18 : 0 }, (_, i) => (
+  const particles = Array.from({ length: isFocused ? 18 : 0 }, (_, i) => {
+    const dx = (deterministicUnit(i, 1) - 0.5) * 40
+    const dy = (deterministicUnit(i, 2) - 0.5) * 40
+    const scale = deterministicUnit(i, 3) * 0.8 + 0.4
+    const duration = deterministicUnit(i, 4) * 1.5 + 1.5
+    const left = deterministicUnit(i, 5) * 100
+    const top = deterministicUnit(i, 6) * 100
+    return (
     <motion.div
       key={i}
       initial={{ scale: 0 }}
       animate={{
-        x: [0, (Math.random() - 0.5) * 40],
-        y: [0, (Math.random() - 0.5) * 40],
-        scale: [0, Math.random() * 0.8 + 0.4],
+        x: [0, dx],
+        y: [0, dy],
+        scale: [0, scale],
         opacity: [0, 0.8, 0],
       }}
       transition={{
-        duration: Math.random() * 1.5 + 1.5,
+        duration,
         ease: "easeInOut",
         repeat: Number.POSITIVE_INFINITY,
         repeatType: "reverse",
       }}
       className="absolute w-3 h-3 rounded-full bg-gradient-to-r from-cyan-400 to-blue-400"
       style={{
-        left: `${Math.random() * 100}%`,
-        top: `${Math.random() * 100}%`,
+        left: `${left}%`,
+        top: `${top}%`,
         filter: "blur(2px)",
       }}
     />
-  ))
+    )
+  })
 
   const clickParticles = isClicked
-    ? Array.from({ length: 14 }, (_, i) => (
+    ? Array.from({ length: 14 }, (_, i) => {
+        const dx = (deterministicUnit(i, mousePosition.x + 1) - 0.5) * 160
+        const dy = (deterministicUnit(i, mousePosition.y + 1) - 0.5) * 160
+        const scale = deterministicUnit(i, mousePosition.x + mousePosition.y + 2) * 0.8 + 0.2
+        const duration = deterministicUnit(i, mousePosition.x * 0.5 + mousePosition.y * 0.3 + 3) * 0.8 + 0.5
+        return (
         <motion.div
           key={`click-${i}`}
           initial={{ x: mousePosition.x, y: mousePosition.y, scale: 0, opacity: 1 }}
           animate={{
-            x: mousePosition.x + (Math.random() - 0.5) * 160,
-            y: mousePosition.y + (Math.random() - 0.5) * 160,
-            scale: Math.random() * 0.8 + 0.2,
+            x: mousePosition.x + dx,
+            y: mousePosition.y + dy,
+            scale,
             opacity: [1, 0],
           }}
-          transition={{ duration: Math.random() * 0.8 + 0.5, ease: "easeOut" }}
+          transition={{ duration, ease: "easeOut" }}
           className="absolute w-3 h-3 rounded-full"
           style={{
             background: `rgba(0, 240, 255, 0.8)`,
             boxShadow: "0 0 8px rgba(0, 240, 255, 0.8)",
           }}
         />
-      ))
+      )})
     : null
 
   return (

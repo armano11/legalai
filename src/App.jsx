@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { ThemeProvider } from './components/ThemeContext';
 import { Navbar } from './components/layout/Navbar';
@@ -14,14 +14,15 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const LegalResearch = lazy(() => import('./pages/LegalResearch'));
-const ContractAnalyzer = lazy(() => import('./pages/ContractAnalyzer'));
-const DraftGenerator = lazy(() => import('./pages/DraftGenerator'));
 const CaseDashboard = lazy(() => import('./pages/CaseDashboard'));
 const CaseInsights = lazy(() => import('./pages/CaseInsights'));
 const ResearchReport = lazy(() => import('./pages/ResearchReport'));
 const LawyerDirectory = lazy(() => import('./pages/LawyerDirectory'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const DraftGenerator = lazy(() => import('./pages/DraftGenerator'));
+const ClientPortal = lazy(() => import('./pages/ClientPortal'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -46,6 +47,8 @@ const PageLoader = () => (
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const location = useLocation();
+  const isClientTrackingPage = location.pathname === '/track';
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -60,29 +63,32 @@ function AppRoutes() {
   
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-300">
-      <Navbar />
+      {!isClientTrackingPage && <Navbar />}
       <Suspense fallback={<PageLoader />}>
         <Routes>
             <Route path="/" element={!isAuthenticated ? <LandingPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="/register" element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/track" element={<ClientPortal />} />
             
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute adminOnly={true}><AdminDashboard /></ProtectedRoute>} />
             <Route path="/lawyers" element={<ProtectedRoute><LawyerDirectory /></ProtectedRoute>} />
             <Route path="/research" element={<ProtectedRoute><LegalResearch /></ProtectedRoute>} />
             <Route path="/research/report" element={<ProtectedRoute><ResearchReport /></ProtectedRoute>} />
-            <Route path="/contracts" element={<ProtectedRoute><ContractAnalyzer /></ProtectedRoute>} />
-            <Route path="/drafts" element={<ProtectedRoute><DraftGenerator /></ProtectedRoute>} />
             <Route path="/cases" element={<ProtectedRoute><CaseDashboard /></ProtectedRoute>} />
             <Route path="/insights" element={<ProtectedRoute><CaseInsights /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/draft" element={<ProtectedRoute><DraftGenerator /></ProtectedRoute>} />
+            <Route path="/contract-analyzer" element={<ProtectedRoute><Navigate to="/research" replace /></ProtectedRoute>} />
             
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
       </Suspense>
-      <CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} />
+      {!isClientTrackingPage && (
+        <CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} />
+      )}
     </div>
   );
 }

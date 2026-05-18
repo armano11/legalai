@@ -9,6 +9,8 @@ class SupabaseRest:
     def __init__(self, url, key):
         self.url = url
         self.key = key
+        self.session = requests.Session()
+        self.session.trust_env = False
         self.headers = {
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -65,7 +67,9 @@ class SupabaseQuery:
         return self
 
     def order(self, column, desc=False):
-        self.params["order"] = f"{column}.{'desc' if desc else 'asc'}"
+        clause = f"{column}.{'desc' if desc else 'asc'}"
+        existing = self.params.get("order")
+        self.params["order"] = f"{existing},{clause}" if existing else clause
         return self
 
     def limit(self, count):
@@ -74,19 +78,22 @@ class SupabaseQuery:
 
     def execute(self):
         class Result:
-            def __init__(self, data, count=None):
+            def __init__(self, data, count=None, ok=True, status_code=200, error=None):
                 self.data = data
                 self.count = count
+                self.ok = ok
+                self.status_code = status_code
+                self.error = error
 
         try:
             if self.method == "GET":
-                r = requests.get(self.base_url, headers=self.headers, params=self.params, timeout=10)
+                r = supabase.session.get(self.base_url, headers=self.headers, params=self.params, timeout=10)
             elif self.method == "POST":
-                r = requests.post(self.base_url, headers=self.headers, json=self.data, timeout=10)
+                r = supabase.session.post(self.base_url, headers=self.headers, json=self.data, timeout=10)
             elif self.method == "PATCH":
-                r = requests.patch(self.base_url, headers=self.headers, params=self.params, json=self.data, timeout=10)
+                r = supabase.session.patch(self.base_url, headers=self.headers, params=self.params, json=self.data, timeout=10)
             elif self.method == "DELETE":
-                r = requests.delete(self.base_url, headers=self.headers, params=self.params, timeout=10)
+                r = supabase.session.delete(self.base_url, headers=self.headers, params=self.params, timeout=10)
             
             r.raise_for_status()
             
@@ -102,10 +109,10 @@ class SupabaseQuery:
                     except (ValueError, TypeError):
                         count = 0
             
-            return Result(r.json() if r.text else [], count)
+            return Result(r.json() if r.text else [], count, ok=True, status_code=r.status_code, error=None)
         except Exception as e:
-            logger.error(f"Supabase REST Error: {e}")
-            return Result([], 0)
+            status_code = getattr(getattr(e, "response", None), "status_code", 0) or 0
+            return Result([], 0, ok=False, status_code=status_code, error=str(e))
 
 # Initialize Singleton Client
 supabase = SupabaseRest(SUPABASE_URL, SUPABASE_KEY)

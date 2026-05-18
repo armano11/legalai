@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useTransform, useMotionValueEvent, useSpring } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Web3HeroAnimated } from './animated-web3-landing-page';
@@ -71,7 +71,7 @@ export default function LawTechScroll() {
     restDelta: 0.001
   });
 
-  const renderFrame = (index) => {
+  const renderFrame = useCallback((index) => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -209,7 +209,7 @@ export default function LawTechScroll() {
         ctx.fillRect(40, 50, 40, -60 * pOut);
     }
     ctx.restore();
-  };
+  }, [images, loadError, totalFrames]);
 
   useMotionValueEvent(smoothProgress, "change", (latest) => {
     if (loaded) {
@@ -225,7 +225,7 @@ export default function LawTechScroll() {
     if (loaded) {
       renderFrame(0);
     }
-  }, [loaded, loadError]);
+  }, [loaded, renderFrame]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -236,7 +236,7 @@ export default function LawTechScroll() {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [loaded, smoothProgress, totalFrames]);
+  }, [loaded, totalFrames, scrollYProgress, renderFrame]);
 
   // --- Animation Overlays (5 Stages) ---
   

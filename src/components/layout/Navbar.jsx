@@ -1,29 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Scale, ChevronDown, LogOut, Settings, LayoutDashboard, Bell, Briefcase, Gavel } from 'lucide-react';
+import { Scale, ChevronDown, LogOut, Settings, LayoutDashboard, Bell, Briefcase, Gavel, Menu, X } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { useTheme } from '../ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function Navbar() {
   const { user, logout, isAdmin } = useAuth();
-  const { isDarkMode, toggleTheme } = useTheme();
   const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      const interval = setInterval(fetchNotifications, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [user]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     const token = localStorage.getItem('jurisai_token');
     if (!token) return;
     try {
@@ -33,8 +24,17 @@ export function Navbar() {
         setNotifications(data.notifications || []);
         setUnreadCount(data.unread_count || 0);
       }
-    } catch {}
-  };
+    } catch (error) {
+      console.debug('Notification fetch failed:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchNotifications]);
 
   const markAllRead = async () => {
     const token = localStorage.getItem('jurisai_token');
@@ -42,7 +42,9 @@ export function Navbar() {
       await fetch('/api/notifications/read-all', { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
       setUnreadCount(0);
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    } catch {}
+    } catch (error) {
+      console.debug('Mark all read failed:', error);
+    }
   };
 
   const markRead = async (id) => {
@@ -51,7 +53,9 @@ export function Navbar() {
       await fetch(`/api/notifications/${id}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch {}
+    } catch (error) {
+      console.debug('Mark read failed:', error);
+    }
   };
 
   useEffect(() => {
@@ -60,11 +64,14 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
+
   const navLinks = [
     { name: 'Research', path: '/research' },
-    { name: 'Contracts', path: '/contracts' },
-    { name: 'Drafts', path: '/drafts' },
     { name: 'Cases', path: '/cases' },
+    { name: 'Draft', path: '/draft' },
     { name: 'Analytics', path: '/analytics' },
     { name: 'Lawyers', path: '/lawyers' },
   ];
@@ -122,6 +129,65 @@ export function Navbar() {
                 </Link>
               )}
             </nav>
+          )}
+
+          {/* Mobile nav toggle — desktop nav is hidden below md */}
+          {user && (
+            <div className="relative md:hidden">
+              <button
+                type="button"
+                aria-expanded={isMobileNavOpen}
+                aria-label={isMobileNavOpen ? 'Close menu' : 'Open menu'}
+                onClick={() => {
+                  setIsMobileNavOpen((o) => !o);
+                  setIsProfileOpen(false);
+                  setIsNotifOpen(false);
+                }}
+                className="rounded-full border border-white/10 p-2 text-white hover:bg-white/5 transition-colors"
+              >
+                {isMobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
+              <AnimatePresence>
+                {isMobileNavOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute right-0 top-full z-50 mt-2 min-w-[220px] overflow-hidden rounded-2xl border border-border glass-panel shadow-xl"
+                  >
+                    <nav className="flex flex-col p-2">
+                      {navLinks.map((link) => {
+                        const isActive = location.pathname.startsWith(link.path);
+                        return (
+                          <Link
+                            key={link.name}
+                            to={link.path}
+                            onClick={() => setIsMobileNavOpen(false)}
+                            className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+                              isActive ? 'bg-primary-violet/20 text-white' : 'text-muted-foreground hover:bg-white/5 hover:text-white'
+                            }`}
+                          >
+                            {link.name}
+                          </Link>
+                        );
+                      })}
+                      {isAdmin() && (
+                        <Link
+                          to="/admin"
+                          onClick={() => setIsMobileNavOpen(false)}
+                          className={`rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest ${
+                            location.pathname.startsWith('/admin') ? 'bg-primary-violet/20 text-white' : 'text-foreground/50 hover:bg-white/5'
+                          }`}
+                        >
+                          Admin
+                        </Link>
+                      )}
+                    </nav>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
 
           {/* Right Actions */}
@@ -244,6 +310,10 @@ export function Navbar() {
                       
                       <Link to="/dashboard" className="flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-border/30 rounded-lg transition-colors" onClick={() => setIsProfileOpen(false)}>
                         <LayoutDashboard className="h-4 w-4" /> Dashboard
+                      </Link>
+
+                      <Link to="/cases" className="flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-border/30 rounded-lg transition-colors mt-1" onClick={() => setIsProfileOpen(false)}>
+                        <Briefcase className="h-4 w-4" /> Cases
                       </Link>
 
                       <Link to="/settings" onClick={() => setIsProfileOpen(false)} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-border/30 rounded-lg transition-colors mt-1">

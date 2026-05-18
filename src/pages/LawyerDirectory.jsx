@@ -1,4 +1,4 @@
-﻿
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../components/AuthContext';
 import { cn } from '../lib/utils';
+import { isValidEmail, isValidPhone, sanitizePhoneInput } from '../utils/validators';
 import TeamShowcase from '@/components/ui/team-showcase';
 import { useNavigate } from 'react-router-dom';
 
@@ -495,7 +496,7 @@ export default function LawyerDirectory() {
       if (!response.ok) throw new Error('Directory fetch failed');
       const data = await response.json();
       const roster = Array.isArray(data.lawyers) ? data.lawyers.map(normalizeLawyer) : [];
-      const resolved = mergeRosterWithViewer(roster.length ? roster : buildFallbackRoster(), user, storedProfiles);
+      const resolved = mergeRosterWithViewer(roster, user, storedProfiles);
       setLawyers(resolved);
       setAdminProfile(data.admin || (user?.role === 'admin' ? buildViewerLawyer(user, storedProfiles) : null));
       const preferredEmail = user?.role !== 'admin' && user?.email && resolved.some((item) => item.email === user.email)
@@ -505,7 +506,7 @@ export default function LawyerDirectory() {
       setProfileModalEmail((current) => current && resolved.some((item) => item.email === current) ? current : '');
     } catch (error) {
       console.error('Failed to fetch lawyer directory', error);
-      const fallback = mergeRosterWithViewer(buildFallbackRoster(), user, storedProfiles);
+      const fallback = mergeRosterWithViewer([], user, storedProfiles);
       setLawyers(fallback);
       setAdminProfile(user?.role === 'admin' ? buildViewerLawyer(user, storedProfiles) : null);
       setSelectedLawyerEmail(user?.role !== 'admin' && user?.email ? user.email : fallback[0]?.email || '');
@@ -535,7 +536,10 @@ export default function LawyerDirectory() {
   };
 
   const handleProfileFieldChange = (field, value) => {
-    setProfileForm((current) => ({ ...current, [field]: value }));
+    const nextValue = (field === 'phone' || field === 'emergency_contact')
+      ? sanitizePhoneInput(value)
+      : value;
+    setProfileForm((current) => ({ ...current, [field]: nextValue }));
   };
 
   const saveProfile = async (event) => {
@@ -545,6 +549,14 @@ export default function LawyerDirectory() {
     const trimmedName = profileForm.name.trim();
     if (!trimmedName) {
       setProfileError('Name is required.');
+      return;
+    }
+    if (profileForm.phone.trim() && !isValidPhone(profileForm.phone)) {
+      setProfileError('Phone must be a valid 10-15 digit number.');
+      return;
+    }
+    if (profileForm.emergency_contact.trim() && !isValidPhone(profileForm.emergency_contact)) {
+      setProfileError('Emergency contact must be a valid 10-15 digit number.');
       return;
     }
 
@@ -702,6 +714,10 @@ export default function LawyerDirectory() {
   const submitCase = async (event) => {
     event.preventDefault();
     if (!assignTarget) return;
+    if (form.client_email.trim() && !isValidEmail(form.client_email)) {
+      setAssignError('Client email is invalid.');
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await fetch('/api/lawyers/cases', {
@@ -1015,7 +1031,7 @@ export default function LawyerDirectory() {
                 </div>
                 <label className="space-y-2 text-sm"><span className="block text-[10px] uppercase tracking-[0.28em] text-white/45">Bio</span><textarea value={profileForm.bio} onChange={(event) => handleProfileFieldChange('bio', event.target.value)} placeholder="Professional bio" className="min-h-24 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none" /></label>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <Field label="Phone" value={profileForm.phone} onChange={(value) => handleProfileFieldChange('phone', value)} placeholder="+91 ..." />
+                  <Field label="Phone" value={profileForm.phone} onChange={(value) => handleProfileFieldChange('phone', value)} placeholder="+91 ..." type="tel" inputMode="tel" maxLength={16} />
                   <Field label="Location" value={profileForm.location} onChange={(value) => handleProfileFieldChange('location', value)} placeholder="Mumbai, India" />
                   <Field label="Residence" value={profileForm.residence} onChange={(value) => handleProfileFieldChange('residence', value)} placeholder="Office / residence" />
                 </div>
@@ -1029,7 +1045,7 @@ export default function LawyerDirectory() {
                   <Field label="Practice Areas" value={profileForm.practice_areas} onChange={(value) => handleProfileFieldChange('practice_areas', value)} placeholder="Corporate Governance, Litigation" />
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <Field label="Emergency Contact" value={profileForm.emergency_contact} onChange={(value) => handleProfileFieldChange('emergency_contact', value)} placeholder="+91 ..." />
+                  <Field label="Emergency Contact" value={profileForm.emergency_contact} onChange={(value) => handleProfileFieldChange('emergency_contact', value)} placeholder="+91 ..." type="tel" inputMode="tel" maxLength={16} />
                   <Field label="Billable Rate" value={profileForm.billable_rate} onChange={(value) => handleProfileFieldChange('billable_rate', value)} placeholder="INR 25000/hr" />
                   <Field label="Assistant Desk" value={profileForm.assistant_name} onChange={(value) => handleProfileFieldChange('assistant_name', value)} placeholder="Desk / assistant" />
                 </div>
@@ -1188,7 +1204,7 @@ export default function LawyerDirectory() {
                     <Field label="Case Title" value={form.title} onChange={(value) => setForm((current) => ({ ...current, title: value }))} placeholder="Enter case title" required />
                     <div className="grid gap-4 md:grid-cols-2">
                       <Field label="Client Name" value={form.client_name} onChange={(value) => setForm((current) => ({ ...current, client_name: value }))} placeholder="Client or company" />
-                      <Field label="Client Email" value={form.client_email} onChange={(value) => setForm((current) => ({ ...current, client_email: value }))} placeholder="client@company.com" />
+                      <Field label="Client Email" value={form.client_email} onChange={(value) => setForm((current) => ({ ...current, client_email: value }))} placeholder="client@company.com" type="email" inputMode="email" maxLength={120} />
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <SelectField label="Case Type" value={form.case_type} onChange={(value) => setForm((current) => ({ ...current, case_type: value }))} options={['Civil', 'Criminal', 'Corporate', 'IP', 'Family', 'Tax', 'Constitutional', 'Labour']} />
@@ -1226,8 +1242,8 @@ function CaseMeta({ label, value }) {
   return <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"><div className="text-[10px] uppercase tracking-[0.28em] text-white/35">{label}</div><div className="mt-2 text-sm leading-6 text-white/70">{value}</div></div>;
 }
 
-function Field({ label, value, onChange, placeholder, required = false }) {
-  return <label className="space-y-2 text-sm"><span className="block text-[10px] uppercase tracking-[0.28em] text-white/45">{label}</span><input value={value} required={required} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none placeholder:text-white/25" /></label>;
+function Field({ label, value, onChange, placeholder, required = false, type = "text", inputMode, maxLength }) {
+  return <label className="space-y-2 text-sm"><span className="block text-[10px] uppercase tracking-[0.28em] text-white/45">{label}</span><input type={type} inputMode={inputMode} maxLength={maxLength} value={value} required={required} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none placeholder:text-white/25" /></label>;
 }
 
 function SelectField({ label, value, onChange, options }) {

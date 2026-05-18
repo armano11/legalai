@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BadgeCheck,
@@ -79,13 +79,7 @@ export default function LawyerDirectoryRedesign() {
   const [copiedFirmId, setCopiedFirmId] = useState(false);
   const [form, setForm] = useState(emptyCaseForm);
 
-  useEffect(() => {
-    if (token) {
-      fetchDirectory();
-    }
-  }, [token]);
-
-  const fetchDirectory = async () => {
+  const fetchDirectory = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetchWithTimeout('/api/lawyers/directory', {
@@ -109,7 +103,13 @@ export default function LawyerDirectoryRedesign() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      fetchDirectory();
+    }
+  }, [token, fetchDirectory]);
 
   const practiceFilters = useMemo(() => {
     const values = new Set();

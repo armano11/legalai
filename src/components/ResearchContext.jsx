@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useRef } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import React, { createContext, useContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle, AlertTriangle, ArrowRight, Activity } from 'lucide-react';
+import { CheckCircle, AlertTriangle, ArrowRight } from 'lucide-react';
 
 const ResearchContext = createContext({});
 
@@ -25,6 +26,8 @@ export function ResearchProvider({ children }) {
   const [error, setError] = useState('');
   const [pipelineStage, setPipelineStage] = useState(0);
   const [notification, setNotification] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   const navigate = useNavigate();
 
@@ -39,7 +42,7 @@ export function ResearchProvider({ children }) {
     setError('');
     setPipelineStage(0);
 
-    const safeToken = token || localStorage.getItem('token');
+    const safeToken = token || localStorage.getItem('jurisai_token');
 
     try {
       // 1. Retrieval
@@ -58,8 +61,8 @@ export function ResearchProvider({ children }) {
       
       let finalData = { ...data };
 
-      // 2. Deep Synthesis (Multi-Agent Logic)
-      if (data.context_for_ai) {
+      // 2. Deep Synthesis only when the initial response does not already include a finished report.
+      if (data.context_for_ai && !data.synthesis_ready) {
         setPipelineStage(2);
         setIsSynthesizing(true);
         
@@ -90,7 +93,7 @@ export function ResearchProvider({ children }) {
       setTimeout(() => {
         setIsSearching(false);
         setIsSynthesizing(false);
-        showNotification("Intelligence Brief Ready", "**law&tech** has finished the deep multi-agent analysis.", finalData, searchQuery);
+        showNotification("Intelligence Brief Ready", "**law&tech** has finished the deep multi-agent analysis.", finalData, searchQuery, false, "deep_report");
       }, 1200);
 
     } catch (err) {
@@ -98,12 +101,51 @@ export function ResearchProvider({ children }) {
       setResults([]);
       setIsSearching(false);
       setIsSynthesizing(false);
-      showNotification("Research Failed", err.message, null, null, true);
     }
   };
 
-  const showNotification = (title, message, data, q, isError = false) => {
-    setNotification({ title, message, data, q, isError });
+  const handleFileUpload = async (uploadFile, token) => {
+    if (!uploadFile) return;
+    setIsAnalyzing(true);
+    setHasSearched(true);
+    setError('');
+    
+    const safeToken = token || localStorage.getItem('jurisai_token');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+
+      const res = await fetch('/api/analyze-contract', {
+        method: 'POST',
+        headers: safeToken ? { Authorization: `Bearer ${safeToken}` } : {},
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Analysis failed');
+      }
+
+      const data = await res.json();
+      setAnalysisResult(data);
+      // Keep analysis flow clean; no deep-report style popup card here.
+      setNotification(null);
+    } catch (err) {
+      setError(err.message);
+      showNotification("Analysis Failed", err.message, null, null, true, "none");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const clearAnalysis = () => {
+    setAnalysisResult(null);
+    setHasSearched(false);
+  };
+
+  const showNotification = (title, message, data, q, isError = false, actionType = "deep_report") => {
+    setNotification({ title, message, data, q, isError, actionType });
     if (isError) {
       setTimeout(() => setNotification(null), 5000);
     } // Success notifications stay until dismissed or clicked
@@ -119,7 +161,8 @@ export function ResearchProvider({ children }) {
   return (
     <ResearchContext.Provider value={{
       query, setQuery, isSearching, isSynthesizing, hasSearched,
-      results, fullData, error, pipelineStage, handleSearch, viewDeepAnalysis
+      results, fullData, error, pipelineStage, handleSearch, viewDeepAnalysis,
+      isAnalyzing, analysisResult, handleFileUpload, clearAnalysis
     }}>
       {children}
 
@@ -148,7 +191,7 @@ export function ResearchProvider({ children }) {
                 <p className="text-muted-foreground text-sm mb-4 leading-relaxed">{notification.message}</p>
                 
                 <div className="flex gap-3">
-                  {!notification.isError && (
+                  {!notification.isError && notification.actionType === "deep_report" && (
                     <button 
                       onClick={() => viewDeepAnalysis(notification.data, notification.q)}
                       className="flex-1 px-4 py-2 bg-primary text-primary-foreground font-bold uppercase tracking-widest text-[10px] rounded-lg hover:shadow-[0_0_20px_rgba(0,240,255,0.4)] transition-all flex items-center justify-center gap-2"

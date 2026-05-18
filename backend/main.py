@@ -1,7 +1,12 @@
 import logging
+import asyncio
+import contextlib
+import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +23,9 @@ app = FastAPI(
     version="2.0.0"
 )
 
+PROJECT_ROOT = os.path.dirname(BASE_DIR := os.path.dirname(os.path.abspath(__file__)))
+DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
+
 # --- CORS (allow React frontend) ---
 app.add_middleware(
     CORSMiddleware,
@@ -33,22 +41,51 @@ from api.routes.research import router as research_router
 from api.routes.contracts import router as contracts_router
 from api.routes.drafts import router as drafts_router
 from api.routes.insights import router as insights_router
-from api.routes.calendar import router as calendar_router
 from api.routes.admin import router as admin_router
 from api.routes.analytics import router as analytics_router
 from api.routes.lawyers import router as lawyers_router
 from api.routes.notifications import router as notifications_router
+from api.routes.client import router as client_router
+from api.routes.cases import router as cases_router
 
 app.include_router(auth_router)
 app.include_router(research_router)
 app.include_router(contracts_router)
 app.include_router(drafts_router)
 app.include_router(insights_router)
-app.include_router(calendar_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
 app.include_router(lawyers_router)
 app.include_router(notifications_router)
+app.include_router(client_router)
+app.include_router(cases_router)
+
+if os.path.isdir(DIST_DIR):
+    assets_dir = os.path.join(DIST_DIR, "assets")
+    sequence_dir = os.path.join(DIST_DIR, "sequence")
+    favicon_path = os.path.join(DIST_DIR, "favicon.svg")
+    icons_path = os.path.join(DIST_DIR, "icons.svg")
+
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+    if os.path.isdir(sequence_dir):
+        app.mount("/sequence", StaticFiles(directory=sequence_dir), name="frontend-sequence")
+
+    @app.get("/app")
+    async def frontend_app():
+        return FileResponse(os.path.join(DIST_DIR, "index.html"))
+
+    @app.get("/app/{full_path:path}")
+    async def frontend_spa(full_path: str):
+        return FileResponse(os.path.join(DIST_DIR, "index.html"))
+
+    @app.get("/favicon.svg")
+    async def frontend_favicon():
+        return FileResponse(favicon_path)
+
+    @app.get("/icons.svg")
+    async def frontend_icons():
+        return FileResponse(icons_path)
 
 
 # --- Health Check ---
@@ -163,6 +200,27 @@ async def startup():
 
     logger.info("JurisAI API is ready.")
     logger.info("Docs: http://localhost:8000/docs")
+    app.state.auto_reminder_task = asyncio.create_task(_auto_reminder_loop())
+
+
+async def _auto_reminder_loop():
+    """Periodic worker for automatic Twilio hearing reminder calls."""
+    while True:
+        try:
+            from api.routes.lawyers import run_auto_hearing_call_reminders
+            await asyncio.to_thread(run_auto_hearing_call_reminders)
+        except Exception as e:
+            logger.error(f"Auto reminder loop error: {e}")
+        await asyncio.sleep(1800)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    task = getattr(app.state, "auto_reminder_task", None)
+    if task:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 

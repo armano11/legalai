@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database.db import supabase
 from api.routes.auth import get_current_user
 import json
@@ -30,7 +30,8 @@ async def mark_read(notification_id: int, user: dict = Depends(get_current_user)
         supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
         return {"message": "Marked as read"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Notification mark_read failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to mark notification as read")
 
 @router.put("/read-all")
 async def mark_all_read(user: dict = Depends(get_current_user)):
@@ -39,7 +40,8 @@ async def mark_all_read(user: dict = Depends(get_current_user)):
         supabase.table("notifications").update({"read": True}).eq("user_email", user.get("email")).execute()
         return {"message": "All notifications marked as read"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Notification mark_all_read failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to mark notifications as read")
 
 def create_notification(user_email: str, title: str, message: str, notification_type: str = "case_assigned", reference_id: str = ""):
     """Helper: create a notification for a user. Call from other routes."""
@@ -51,7 +53,7 @@ def create_notification(user_email: str, title: str, message: str, notification_
             "type": notification_type,
             "reference_id": reference_id,
             "read": False,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     except Exception as e:
         logger.warning(f"Failed to create notification: {e}")

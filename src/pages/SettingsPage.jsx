@@ -10,6 +10,7 @@ import {
   splitLineValues,
   writeStoredProfiles,
 } from '../lib/lawyerProfileStorage';
+import { isValidPhone, sanitizePhoneInput } from '../utils/validators';
 
 const createProfileForm = (user, profiles) => {
   const extra = user?.email ? profiles[user.email] || {} : {};
@@ -51,7 +52,10 @@ export default function SettingsPage() {
   );
 
   const setField = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    const nextValue = (field === 'phone' || field === 'emergency_contact')
+      ? sanitizePhoneInput(value)
+      : value;
+    setForm((current) => ({ ...current, [field]: nextValue }));
     setError('');
     setNotice('');
   };
@@ -81,6 +85,14 @@ export default function SettingsPage() {
     const trimmedName = form.name.trim();
     if (!trimmedName) {
       setError('Name is required.');
+      return;
+    }
+    if (form.phone.trim() && !isValidPhone(form.phone)) {
+      setError('Office phone must be a valid 10-15 digit number.');
+      return;
+    }
+    if (form.emergency_contact.trim() && !isValidPhone(form.emergency_contact)) {
+      setError('Emergency contact must be a valid 10-15 digit number.');
       return;
     }
 
@@ -196,7 +208,7 @@ export default function SettingsPage() {
             <form onSubmit={saveProfile} className="grid gap-6">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Full Name" value={form.name} onChange={(value) => setField('name', value)} placeholder="Attorney name" required />
-                <Field label="Office Phone" value={form.phone} onChange={(value) => setField('phone', value)} placeholder="+91 ..." />
+                <Field label="Office Phone" value={form.phone} onChange={(value) => setField('phone', value)} placeholder="+91 ..." type="tel" inputMode="tel" maxLength={16} />
               </div>
 
               <label className="space-y-2 text-sm">
@@ -207,7 +219,7 @@ export default function SettingsPage() {
               <div className="grid gap-4 md:grid-cols-3">
                 <Field label="Location" value={form.location} onChange={(value) => setField('location', value)} placeholder="Mumbai, India" />
                 <Field label="Residence" value={form.residence} onChange={(value) => setField('residence', value)} placeholder="Primary office / residence" />
-                <Field label="Emergency Contact" value={form.emergency_contact} onChange={(value) => setField('emergency_contact', value)} placeholder="+91 ..." />
+                <Field label="Emergency Contact" value={form.emergency_contact} onChange={(value) => setField('emergency_contact', value)} placeholder="+91 ..." type="tel" inputMode="tel" maxLength={16} />
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
@@ -241,7 +253,7 @@ export default function SettingsPage() {
               {notice ? <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{notice}</div> : null}
 
               <div className="flex flex-wrap justify-end gap-3 pt-2">
-                <Link to="/lawyers" className="inline-flex h-11 items-center rounded-xl border border-white/10 px-5 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                <Link to="/lawyers" className="inline-flex h-11 items-center rounded-xl border border-white/20 bg-white/[0.04] px-5 text-[10px] font-semibold uppercase tracking-[0.24em] text-white transition hover:bg-white/[0.08]">
                   Cancel
                 </Link>
                 <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-300 px-5 text-[10px] font-bold uppercase tracking-[0.28em] text-black disabled:opacity-50">
@@ -257,11 +269,14 @@ export default function SettingsPage() {
   );
 }
 
-function Field({ label, value, onChange, placeholder, required = false }) {
+function Field({ label, value, onChange, placeholder, required = false, type = "text", inputMode, maxLength }) {
   return (
     <label className="space-y-2 text-sm">
       <span className="block text-[10px] uppercase tracking-[0.28em] text-white/45">{label}</span>
       <input
+        type={type}
+        inputMode={inputMode}
+        maxLength={maxLength}
         value={value}
         required={required}
         onChange={(event) => onChange(event.target.value)}

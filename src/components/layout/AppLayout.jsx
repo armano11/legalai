@@ -12,7 +12,7 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen flex-col relative bg-[#000000] text-foreground">
+    <div className="flex min-h-screen flex-col relative bg-background text-foreground">
       
       {/* Global Ambient Accents - Very subtle white/5 glows for depth */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 opacity-20">

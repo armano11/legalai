@@ -188,7 +188,7 @@ function HeroGeometric({
                         animate="visible"
                     >
                         <p className="text-sm sm:text-base text-white/40 mb-8 leading-relaxed font-light tracking-wide max-w-xl mx-auto px-4 font-geist">
-                            Synthesizing legal intelligence through autonomous neural auditing and structural taxonomy analysis.
+                            Synthesizing legal intelligence through autonomous auditing and structural taxonomy analysis.
                         </p>
                     </motion.div>
                 </div>

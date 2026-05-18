@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Mail, Sparkles, Scale } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -21,6 +21,7 @@ const Pupil = ({
 }) => {
   const [mouseX, setMouseX] = useState(0);
   const [mouseY, setMouseY] = useState(0);
+  const [pupilPosition, setPupilPosition] = useState({ x: 0, y: 0 });
   const pupilRef = useRef(null);
 
   useEffect(() => {
@@ -33,29 +34,25 @@ const Pupil = ({
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  const calculatePupilPosition = () => {
-    if (!pupilRef.current) return { x: 0, y: 0 };
-
+  useEffect(() => {
+    if (!pupilRef.current) return;
     if (forceLookX !== undefined && forceLookY !== undefined) {
-      return { x: forceLookX, y: forceLookY };
+      setPupilPosition({ x: forceLookX, y: forceLookY });
+      return;
     }
 
     const pupil = pupilRef.current.getBoundingClientRect();
     const pupilCenterX = pupil.left + pupil.width / 2;
     const pupilCenterY = pupil.top + pupil.height / 2;
-
     const deltaX = mouseX - pupilCenterX;
     const deltaY = mouseY - pupilCenterY;
     const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-
     const angle = Math.atan2(deltaY, deltaX);
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-
-    return { x, y };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+    setPupilPosition({
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+    });
+  }, [forceLookX, forceLookY, maxDistance, mouseX, mouseY]);
 
   return (
     <div
@@ -84,6 +81,7 @@ const EyeBall = ({
 }) => {
   const [mouseX, setMouseX] = useState(0);
   const [mouseY, setMouseY] = useState(0);
+  const [pupilPosition, setPupilPosition] = useState({ x: 0, y: 0 });
   const eyeRef = useRef(null);
 
   useEffect(() => {
@@ -96,29 +94,25 @@ const EyeBall = ({
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  const calculatePupilPosition = () => {
-    if (!eyeRef.current) return { x: 0, y: 0 };
-
+  useEffect(() => {
+    if (!eyeRef.current) return;
     if (forceLookX !== undefined && forceLookY !== undefined) {
-      return { x: forceLookX, y: forceLookY };
+      setPupilPosition({ x: forceLookX, y: forceLookY });
+      return;
     }
 
     const eye = eyeRef.current.getBoundingClientRect();
     const eyeCenterX = eye.left + eye.width / 2;
     const eyeCenterY = eye.top + eye.height / 2;
-
     const deltaX = mouseX - eyeCenterX;
     const deltaY = mouseY - eyeCenterY;
     const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-
     const angle = Math.atan2(deltaY, deltaX);
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-
-    return { x, y };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+    setPupilPosition({
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+    });
+  }, [forceLookX, forceLookY, maxDistance, mouseX, mouseY]);
 
   return (
     <div
@@ -169,7 +163,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
-  const [successMsg, setSuccessMsg] = useState(location.state?.message || "");
+  const successMessage = location.state?.message || "";
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -290,9 +284,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-[#030303]">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       {/* Left Content Section */}
-      <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#0A0E17] via-[#030303] to-[#0A0E17] p-12 text-foreground border-r border-white/5">
+      <div className="relative hidden lg:flex flex-col justify-between bg-surface p-12 text-foreground border-r border-border">
         <div className="relative z-20">
           <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
             <div className="size-8 rounded-lg bg-primary/20 backdrop-blur-sm flex items-center justify-center border border-primary/20">
@@ -448,7 +442,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right Login Section */}
-      <div className="flex items-center justify-center p-8 bg-[#030303] relative border-l border-white/5">
+      <div className="flex items-center justify-center p-8 bg-background relative border-l border-border">
         <div className="absolute inset-0 bg-noise opacity-[0.03] pointer-events-none" />
         <div className="w-full max-w-[420px] relative z-10">
           <div className="lg:hidden flex items-center justify-center gap-2 text-lg font-bold mb-12">
@@ -462,10 +456,16 @@ export default function LoginPage() {
             <h1 className="text-4xl font-black tracking-tight mb-2 text-foreground">
               <GradientWaveText>Welcome Back</GradientWaveText>
             </h1>
-            <p className="text-slate-500 text-sm font-medium">Awaiting secure authentication.</p>
+            <p className="text-slate-400 text-sm font-medium">Sign in to your firm workspace.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {successMessage && (
+              <div className="p-3 text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg font-semibold">
+                {successMessage}
+              </div>
+            )}
+
             <div className="space-y-3">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="attorney@firm.com" value={email} onChange={(e) => setEmail(e.target.value)} onFocus={() => setIsTyping(true)} onBlur={() => setIsTyping(false)} required className="h-12 bg-primary/5 border-border focus:border-primary/50" />
@@ -478,7 +478,7 @@ export default function LoginPage() {
               </div>
               <div className="relative">
                 <Input id="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-12 pr-10 bg-primary/5 border-border focus:border-primary/50" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-foreground transition-colors" >
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-border/50 bg-background/60 p-1.5 text-slate-300 hover:text-foreground hover:bg-background transition-colors" >
                   {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
                 </button>
               </div>
@@ -498,7 +498,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full h-12 text-base font-black uppercase tracking-widest" size="lg" disabled={isLoading} >
+            <Button type="submit" className="w-full h-12 text-base font-black uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20" size="lg" disabled={isLoading} >
               {isLoading ? "Authenticating..." : "Login"}
             </Button>
           </form>
@@ -506,7 +506,7 @@ export default function LoginPage() {
           <div className="text-center text-sm text-slate-500 mt-8 font-medium">
             Don't have an account?{" "}
             <Link to="/register" className="text-foreground font-bold hover:underline">
-              Initialize Account
+              Create Workspace
             </Link>
           </div>
         </div>

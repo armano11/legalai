@@ -1,16 +1,100 @@
-# React + Vite
+# ⚖️ JurisAI — Premium Legal Intelligence
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[![Status](https://img.shields.io/badge/Status-Production--Ready-success.svg?style=flat-square)]()
+[![Backend](https://img.shields.io/badge/Backend-FastAPI-blue.svg?style=flat-square)]()
+[![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg?style=flat-square)]()
+[![AI](https://img.shields.io/badge/AI-NVIDIA%20Gemma--3n-76b900.svg?style=flat-square)]()
 
-Currently, two official plugins are available:
+JurisAI is a state-of-the-art legal research and document analysis platform designed for modern law practices. It combines high-performance neural auditing with a robust RAG (Retrieval-Augmented Generation) pipeline to deliver precise, actionable legal insights.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## ✨ Core Intelligence Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **🧠 Neural Audit**: Deep-dive document analysis powered by NVIDIA Gemma-3n for unmatched precision.
+- **📚 RAG Research Engine**: Augmented intelligence drawing from Landmark cases, IPC, and CrPC datasets.
+- **🖼️ Visual Evidence Gallery**: Real-time web-source visualization with automated favicon mapping and link verification.
+- **⚖️ Strategic Advisory**: Advanced AI-driven litigation strategy and negotiation modeling.
+- **⚡ High-Fidelity Interface**: A premium, minimalist design system built for professional focus.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 Getting Started
+
+### 📦 1. Installation
+
+Ensure you have **Node.js 18+**, **Python 3.10+**, and **Docker Desktop** installed.
+
+```powershell
+# Clone the repository
+git clone https://github.com/armaa11/legalai.git
+cd legalai
+
+# Install dependencies
+npm install
+cd backend
+pip install -r requirements.txt
+cd ..
+```
+
+### 🛠️ 2. Infrastructure Setup
+
+The research pipeline requires a local **Firecrawl** stack for premium web scraping and data extraction.
+
+```powershell
+# Start the scraping infrastructure
+.\scripts\start_firecrawl.ps1
+```
+
+### 🔥 3. Running the Platform
+
+You can start the entire stack (Infrastructure + Backend + Frontend) with a single command:
+
+```powershell
+npm run dev:full
+```
+
+Alternatively, start them separately:
+
+**Backend API:**
+```powershell
+cd backend
+python main.py
+```
+
+**Frontend App:**
+```powershell
+npm run dev
+```
+
+---
+
+## 📁 Project Structure
+
+```text
+├── 📂 backend         # FastAPI server, AI services, and database logic
+├── 📂 src             # React + Vite frontend with Tailwind CSS
+├── 📂 scripts         # Automation and utility scripts
+├── 📂 tests           # E2E and unit testing suites
+├── 📂 datasets        # Legal reference materials (IPC, CrPC, Cases)
+├── 📂 docs            # Documentation and architecture guides
+└── 📂 public          # Static assets
+```
+
+---
+
+## 🔒 Security & Privacy
+
+JurisAI is designed with privacy in mind. All document processing can be configured to run within your private infrastructure. Ensure your `.env` files are properly configured and never committed to version control.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from legal tech enthusiasts. Please read our `CONTRIBUTING.md` (coming soon) for details on our code of conduct and the process for submitting pull requests.
+
+---
+
+<p align="center">
+  Developed with ❤️ for the Legal Community.
+</p>

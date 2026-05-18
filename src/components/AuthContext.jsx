@@ -1,18 +1,21 @@
-/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { API_BASE_URL } from '../config';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('jurisai_token'));
+  const [token, setToken] = useState(sessionStorage.getItem('jurisai_token'));
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const logout = useCallback(() => {
-    localStorage.removeItem('jurisai_token');
+    sessionStorage.removeItem('jurisai_token');
     setToken(null);
     setUser(null);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const checkAuth = useCallback(async () => {
     if (!token) {
@@ -24,7 +27,7 @@ export function AuthProvider({ children }) {
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
     try {
-      const res = await fetch('/api/me', {
+      const res = await fetch(`${API_BASE_URL}/me`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });
@@ -42,6 +45,8 @@ export function AuthProvider({ children }) {
           firm_name: data.firm_name || '',
           profile_picture: data.profile_picture || '',
           bio: data.bio || '',
+          permissions: data.permissions || [],
+          workspace: data.workspace || null,
         });
       } else {
         logout();
@@ -73,7 +78,7 @@ export function AuthProvider({ children }) {
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -102,7 +107,7 @@ export function AuthProvider({ children }) {
       }
       if (!res.ok) throw new Error(errorMsg);
       
-      localStorage.setItem('jurisai_token', data.access_token);
+      sessionStorage.setItem('jurisai_token', data.access_token);
       setToken(data.access_token);
       setUser({ 
         name: data.name || data.user_name || 'User', 
@@ -114,6 +119,7 @@ export function AuthProvider({ children }) {
         firm_name: data.firm_name || '',
         profile_picture: data.profile_picture || '',
         bio: data.bio || '',
+        permissions: data.permissions || [],
       });
       return data;
     } finally {
@@ -126,7 +132,7 @@ export function AuthProvider({ children }) {
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
     try {
-      const res = await fetch('/api/register', {
+      const res = await fetch(`${API_BASE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, plan, firm_name: firmName, firm_id: firmId, role }),

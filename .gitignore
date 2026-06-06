@@ -47,6 +47,7 @@ backend/chroma_db/
 .idea/
 .cursor/
 .DS_Store
+
 *.suo
 *.ntvs*
 *.njsproj

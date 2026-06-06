@@ -235,16 +235,23 @@ def get_hf_laws():
 
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 100) -> list:
+    """Backward-compatible chunker.
+
+    NOTE: This will be replaced by token-aware + hierarchical chunking in the RAG v2 refactor.
+    For now, keep existing behavior stable.
+    """
     words = text.split()
     chunks = []
     start = 0
+    step = max(1, chunk_size - overlap)
     while start < len(words):
-        end = start + chunk_size
+        end = min(len(words), start + chunk_size)
         chunk = " ".join(words[start:end])
         if chunk.strip():
             chunks.append(chunk)
-        start += chunk_size - overlap
+        start += step
     return chunks
+
 
 
 def extract_text_from_file(file_path: str) -> str:

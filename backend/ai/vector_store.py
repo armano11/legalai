@@ -60,7 +60,14 @@ def add_documents(chunks: list, embeddings: list, metadatas: list, ids: list):
 
 
 def search(query_embedding: list, top_k: int = 5) -> dict:
-    """Search the vector store for the most similar documents."""
+    """Search the vector store for the most similar documents.
+
+    Notes:
+    - Chroma is configured with hnsw:space="cosine".
+    - `distances` returned by Chroma for cosine distance are in [0, 2] (cosine distance),
+      where similarity ~= 1 - distance. We keep distances raw here and convert in the
+      caller to avoid mixing concerns.
+    """
     collection = get_collection()
     if collection is None:
         return _empty_result()
@@ -85,6 +92,7 @@ def search(query_embedding: list, top_k: int = 5) -> dict:
     except Exception as exc:
         _disable_vector_store(exc)
         return _empty_result()
+
 
 
 def get_document_count() -> int:

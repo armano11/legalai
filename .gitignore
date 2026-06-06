@@ -38,8 +38,16 @@ test_draft.pdf
 backend/uploads/
 backend/generated_documents/
 backend/chroma_db/
+backend/uploads/
+datasets/
+backend/legal_data/
+public/*.pdf
+public/*.mp4
+public/*.jpeg
+public/*.jpg
 *.db
 *.sqlite3
+
 
 # Editor & System
 .vscode/*

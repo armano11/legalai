@@ -1,17 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # Dependencies
 node_modules/
 .venv/
 venv/
 __pycache__/
 *.py[cod]
+*.pyc
 dist/
 dist-ssr/
+build/
 
-# Environment & Secrets
+# ─────────────────────────────────────────────────────────────────────────────
+# Environment & Secrets (NEVER commit these)
 .env
 .env.*
+!.env.example
 *.local
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Reports & Logs
 *.log
 backend_*.log
@@ -27,6 +33,7 @@ download_log.txt
 err.txt
 server_log.txt
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Temporary & Debug
 scratch/
 debug_playwright/
@@ -34,39 +41,54 @@ tmp_*.py
 debug_*.py
 test_draft.pdf
 
-# Data & Database
+# ─────────────────────────────────────────────────────────────────────────────
+# Data & Database (too large for git)
 backend/uploads/
 backend/generated_documents/
 backend/chroma_db/
-backend/uploads/
-datasets/
 backend/legal_data/
+datasets/
+*.db
+*.sqlite3
+*.db-journal
+
+# ─────────────────────────────────────────────────────────────────────────────
+# External tools
+external/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public media (large files)
 public/*.pdf
 public/*.mp4
 public/*.jpeg
 public/*.jpg
-*.db
-*.sqlite3
+public/*.zip
+public/sequence/
 
-
+# ─────────────────────────────────────────────────────────────────────────────
 # Editor & System
 .vscode/*
 !.vscode/extensions.json
 .idea/
 .cursor/
 .DS_Store
-
+Thumbs.db
+desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-thumbs.db
-desktop.ini
 
-# Project Specific
+# ─────────────────────────────────────────────────────────────────────────────
+# Docker volumes
+docker-compose.override.yml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project-specific: keep config files
 !package.json
 !package-lock.json
 !tsconfig.json
 !tsconfig.node.json
 !eslint.config.js
+!vite.config.js

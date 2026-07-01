@@ -40,9 +40,9 @@ LegalForge is a full-stack legal intelligence platform that combines AI-powered 
 
 ## Features
 
-- **🧠 AI Draft Generator** — Describe what you need in plain language. AI understands intent, selects the right template, modifies clauses, and generates polished legal drafts. Supports **bulk generation** — draft 50+ notices/agreements from a single intent with batch PDF download.
+- **🧠 AI Draft Generator** — Natural-language → polished legal document in one go. Unlike spreadsheet template fillers, describe the situation in plain language and AI picks the right template, modifies clauses to context, and drafts the full document. Bulk mode: craft 10+ personalized notices/agreements from a data grid with batch PDF/ZIP download — each draft AI-adapted to its specific entry.
 - **🔬 RAG Research Engine** — Semantic search across Supreme Court judgments, IPC, CrPC, and Indian legal datasets via ChromaDB vector store.
-- **📄 Contract Analyzer** — Upload contracts for AI-powered clause extraction, risk flagging, and compliance checks.
+- **📄 Deep Contract Review** — Upload a contract and get clause-level risk analysis cross-referenced against Indian case law and statutes via the RAG engine. Detects clauses conflicting with IPC, CrPC, IBC, or latest SC rulings, not just generic red flags.
 - **📋 Case Management** — Full case dashboard with stages, hearings, daily updates, notes, and activity logs.
 - **👥 Lawyer Directory** — Browse and connect with legal professionals within the firm.
 - **🔗 Client Portal** — Public case tracking (`/track`) with real-time status, journey maps, and hearing schedules.

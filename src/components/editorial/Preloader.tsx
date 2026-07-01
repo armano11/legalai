@@ -55,7 +55,7 @@ export function Preloader({ onComplete }: { onComplete: () => void }) {
     >
       <div className="relative w-full max-w-sm px-6">
         <div ref={textRef} className="font-['Playfair_Display'] text-4xl md:text-6xl text-[#f5f1e8] italic font-semibold text-center mb-8 overflow-hidden">
-          JurisAI
+          LegalForge
         </div>
         
         <div className="w-full h-[1px] bg-[#333] relative">

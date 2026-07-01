@@ -126,7 +126,7 @@ def _workspace_permissions(role: str) -> list[str]:
 
 
 def _default_avatar(name: str) -> str:
-    safe_name = (name or "JurisAI Lawyer").strip().replace(" ", "+")
+    safe_name = (name or "LegalForge Lawyer").strip().replace(" ", "+")
     return f"https://ui-avatars.com/api/?name={safe_name}"
 
 
@@ -368,7 +368,7 @@ async def register_user(db_unused, name: str, email: str, password: str, plan: s
                     return {"error": f"Invalid firm ID '{normalized_firm_id}'. This workspace does not exist."}
                 firm_admin = res_firm.data[0]
                 user_firm_id = normalized_firm_id
-                user_firm_name = firm_admin.get("firm_name") or firm_name or "JurisAI Workspace"
+                user_firm_name = firm_admin.get("firm_name") or firm_name or "LegalForge Workspace"
                 user_role = "lawyer"
                 user_plan = plan or "professional"
 

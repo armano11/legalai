@@ -39,7 +39,7 @@ export function ResearchProvider({ children }) {
     setError('');
     setPipelineStage(0);
 
-    const safeToken = token || localStorage.getItem('jurisai_token');
+    const safeToken = token || localStorage.getItem('legalforge_token');
 
     try {
       setPipelineStage(1);
@@ -99,7 +99,7 @@ export function ResearchProvider({ children }) {
     setHasSearched(true);
     setError('');
 
-    const safeToken = token || localStorage.getItem('jurisai_token');
+    const safeToken = token || localStorage.getItem('legalforge_token');
 
     try {
       const formData = new FormData();

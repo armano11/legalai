@@ -10,7 +10,7 @@ const TESTIMONIALS = [
     company: "Stark Industries"
   },
   {
-    quote: "JurisAI replaced three different legacy systems for us. The role-based permissions ensure our ethical walls are never compromised.",
+    quote: "LegalForge replaced three different legacy systems for us. The role-based permissions ensure our ethical walls are never compromised.",
     author: "David Chen",
     role: "Managing Partner",
     company: "Chen & Associates"

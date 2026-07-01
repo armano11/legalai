@@ -1,5 +1,5 @@
 """
-JurisAI Backend - Full Verification Script
+LegalForge Backend - Full Verification Script
 Tests all API endpoints in sequence.
 """
 import requests
@@ -67,7 +67,7 @@ auth_headers = {}
 def test_register():
     r = requests.post(f"{BASE}/api/register", json={
         "name": "Test User",
-        "email": "test@jurisai.com",
+        "email": "test@legalforge.com",
         "password": "TestPass123"
     })
     data = r.json()
@@ -80,7 +80,7 @@ def test_register():
 def test_login():
     global auth_headers
     r = requests.post(f"{BASE}/api/login", json={
-        "email": "test@jurisai.com",
+        "email": "test@legalforge.com",
         "password": "TestPass123"
     })
     data = r.json()

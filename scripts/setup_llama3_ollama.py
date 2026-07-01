@@ -3,7 +3,7 @@ import json
 import sys
 
 # ==========================================
-# JURIS AI - LOCAL LLA-MA 3 INTEGRATION
+# LEGAL FORGE - LOCAL LLA-MA 3 INTEGRATION
 # ==========================================
 # This script demonstrates how to connect your LegalAI backend
 # to Meta's free LLaMA 3 (8B) model running entirely locally via Ollama.
@@ -24,7 +24,7 @@ def generate_legal_advice(prompt, context=""):
     
     # Constructing a robust prompt for the Legal AI
     system_prompt = (
-        "You are an expert Indian Legal AI named JurisAI. "
+        "You are an expert Indian Legal AI named LegalForge. "
         "You provide accurate, highly structured, and professional legal analysis based on Indian Law. "
         "Always cite the relevant sections of the IPC, CrPC, BNS, or constitutional articles if applicable."
     )

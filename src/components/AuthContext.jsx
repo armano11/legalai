@@ -6,12 +6,12 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('jurisai_token'));
+  const [token, setToken] = useState(localStorage.getItem('legalforge_token'));
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
 
   const logout = useCallback(() => {
-    localStorage.removeItem('jurisai_token');
+    localStorage.removeItem('legalforge_token');
     setToken(null);
     setUser(null);
     queryClient.clear();
@@ -107,7 +107,7 @@ export function AuthProvider({ children }) {
       }
       if (!res.ok) throw new Error(errorMsg);
       
-      localStorage.setItem('jurisai_token', data.access_token);
+      localStorage.setItem('legalforge_token', data.access_token);
       setToken(data.access_token);
       setUser({ 
         name: data.name || data.user_name || 'User', 

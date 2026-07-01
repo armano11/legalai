@@ -14,7 +14,7 @@ export default function AboutPage() {
           <Scale className="h-10 w-10 text-primary" />
         </div>
         <h1 className="text-4xl md:text-5xl font-heading font-bold text-primary mb-6">
-          About JurisAI
+          About LegalForge
         </h1>
         <p className="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
           We are on a mission to democratize legal intelligence and empower modern legal professionals with cutting-edge AI.
@@ -25,14 +25,14 @@ export default function AboutPage() {
         <motion.section initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}>
           <h2 className="text-2xl font-bold text-slate-900 mb-4 font-heading border-b border-slate-200 pb-2">Our Vision</h2>
           <p>
-            JurisAI was founded by a team of legal experts and AI researchers who recognized the massive inefficiencies in traditional legal research and document analysis. We believe that by automating routine, time-consuming tasks, lawyers can focus on what truly matters: strategy, counseling, and high-level legal reasoning.
+            LegalForge was founded by a team of legal experts and AI researchers who recognized the massive inefficiencies in traditional legal research and document analysis. We believe that by automating routine, time-consuming tasks, lawyers can focus on what truly matters: strategy, counseling, and high-level legal reasoning.
           </p>
         </motion.section>
 
         <motion.section initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}>
           <h2 className="text-2xl font-bold text-slate-900 mb-4 font-heading border-b border-slate-200 pb-2">Security & Privacy First</h2>
           <p>
-            In the legal profession, confidentiality is paramount. JurisAI is built on an enterprise-grade secure infrastructure. We do not use your proprietary uploaded contracts or case data to train our foundational models. All documents are encrypted both in transit and at rest.
+            In the legal profession, confidentiality is paramount. LegalForge is built on an enterprise-grade secure infrastructure. We do not use your proprietary uploaded contracts or case data to train our foundational models. All documents are encrypted both in transit and at rest.
           </p>
         </motion.section>
 

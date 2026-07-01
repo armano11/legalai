@@ -271,7 +271,7 @@ Yours faithfully,
 ______________________
 [Advocate Name]
 [Bar Council Registration No.]
-JurisAI Legal Intelligence Platform
+LegalForge Legal Intelligence Platform
 """
 }
 
@@ -474,7 +474,7 @@ Prepare a polished Indian legal draft for the following matter.
 Document Type: {doc_type}
 Client / Applicant: {client_name}
 Opposing Party / Respondent: {opposing_party}
-Law Firm / Chamber: {firm_name or "JurisAI Legal"}
+Law Firm / Chamber: {firm_name or "LegalForge Legal"}
 Tone: {tone}
 
 Factual Brief:

@@ -16,7 +16,7 @@ const TESTIMONIALS = [
   {
     name: 'Elena Rostova',
     role: 'VP of Compliance',
-    quote: 'JurisAI is uncompromising on security without sacrificing the UX. A rare triumph.',
+    quote: 'LegalForge is uncompromising on security without sacrificing the UX. A rare triumph.',
     img: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400'
   },
   {

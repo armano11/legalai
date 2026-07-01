@@ -535,7 +535,7 @@ export default function ResearchReport() {
   
   const reportRef = useRef(null);
   const { scrollYProgress } = useScroll();
-  const handlePrint = useReactToPrint({ contentRef: reportRef, documentTitle: `JurisAI_Brief_${query.replace(/\s+/g, '_').slice(0, 20)}` });
+  const handlePrint = useReactToPrint({ contentRef: reportRef, documentTitle: `LegalForge_Brief_${query.replace(/\s+/g, '_').slice(0, 20)}` });
 
   useEffect(() => {
     if (!reportData) {

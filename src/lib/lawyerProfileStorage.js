@@ -1,4 +1,4 @@
-export const PROFILE_STORAGE_KEY = 'jurisai_lawyer_profile_details';
+export const PROFILE_STORAGE_KEY = 'legalforge_lawyer_profile_details';
 
 export function readStoredProfiles() {
   try {

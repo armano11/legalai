@@ -37,7 +37,7 @@ export function LandingNavbar() {
           <div className="bg-gradient-to-tr from-indigo-500 to-cyan-400 p-1.5 rounded-lg">
             <Shield className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
-          <span className="text-slate-50 font-semibold tracking-tight text-lg">JurisAI</span>
+          <span className="text-slate-50 font-semibold tracking-tight text-lg">LegalForge</span>
         </Link>
 
         {/* Desktop Nav */}

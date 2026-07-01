@@ -35,7 +35,7 @@ def test_landing_page():
             "hero_heading": "Enterprise OS" in body_text or "Law" in body_text,
             "initiate_protocol_btn": "Initiate Protocol" in body_text,
             "track_case_section": "Track Your Case" in body_text,
-            "footer_jurisai": "JurisAI" in body_text,
+            "footer_legalforge": "LegalForge" in body_text,
         }
 
         failed = [k for k, v in checks.items() if not v]

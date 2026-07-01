@@ -95,7 +95,7 @@ export function EditorialFooter() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 lg:gap-8">
           
           <div className="col-span-1 md:col-span-2">
-            <h3 className="font-['Playfair_Display'] text-3xl italic mb-6">JurisAI</h3>
+            <h3 className="font-['Playfair_Display'] text-3xl italic mb-6">LegalForge</h3>
             <p className="font-['Space_Grotesk'] text-[#f5f1e8]/60 text-sm max-w-sm leading-relaxed">
               The definitive architecture for complex legal case management. Engineered for modern law firms.
             </p>
@@ -132,7 +132,7 @@ export function EditorialFooter() {
         </div>
 
         <div className="mt-32 pt-8 border-t border-[#f5f1e8]/10 flex flex-col md:flex-row justify-between items-center gap-4 font-['Space_Grotesk'] text-xs text-[#f5f1e8]/40 uppercase tracking-widest">
-          <span>&copy; {new Date().getFullYear()} JurisAI. Form Follows Function.</span>
+          <span>&copy; {new Date().getFullYear()} LegalForge. Form Follows Function.</span>
           <div className="flex gap-8">
             <a href="#" className="hover:text-[#f5f1e8] transition-colors" data-cursor-interactive>Privacy</a>
             <a href="#" className="hover:text-[#f5f1e8] transition-colors" data-cursor-interactive>Terms</a>

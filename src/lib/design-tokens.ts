@@ -1,6 +1,6 @@
 /**
  * design-tokens.ts
- * Centralized Framer Motion animation presets for JurisAI premium UI.
+ * Centralized Framer Motion animation presets for LegalForge premium UI.
  * Import these across all modules for consistent, controlled motion.
  */
 

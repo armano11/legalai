@@ -26,7 +26,7 @@ class CreateLawyerRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str = Field(..., example="admin@jurisai.com")
+    email: str = Field(..., example="admin@legalforge.com")
     password: str = Field(..., example="Str0ng!Pass2026", json_schema_extra={"format": "password"})
 
 
@@ -298,3 +298,30 @@ class CaseInsightsResponse(BaseModel):
     total_drafts: int
     top_categories: List[InsightCategory]
     recent_searches: List[str]
+
+
+# --- Deep Research ---
+class DeepResearchRequest(BaseModel):
+    query: str
+    max_sources: int = 30
+
+
+class DeepResearchSource(BaseModel):
+    title: str
+    url: str
+    snippet: str = ""
+    content: str = ""
+    source: str = "Scrapling"
+    phase: str = "discovery"
+
+
+class DeepResearchTaskResponse(BaseModel):
+    task_id: str
+    query: str
+    status: str
+    progress: int = 0
+    phase: str = ""
+    sources_found: int = 0
+    sources: List[DeepResearchSource] = Field(default_factory=list)
+    synthesis: Optional[str] = None
+    error: Optional[str] = None

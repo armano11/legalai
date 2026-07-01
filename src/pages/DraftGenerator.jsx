@@ -34,7 +34,7 @@ const EXAMPLES = [
 ];
 
 async function apiFetch(path, body) {
-  const token = localStorage.getItem('jurisai_token');
+  const token = localStorage.getItem('legalforge_token');
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
@@ -340,7 +340,7 @@ export default function DraftGenerator() {
                   type="text"
                   value={firmName}
                   onChange={(e) => setFirmName(e.target.value)}
-                  placeholder="e.g. JurisAI Legal Associates"
+                  placeholder="e.g. LegalForge Legal Associates"
                   className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition-all"
                 />
               </div>

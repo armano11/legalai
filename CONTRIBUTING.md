@@ -1,6 +1,6 @@
-# Contributing to JurisAI
+# Contributing to LegalForge
 
-Thank you for your interest in contributing to JurisAI! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to LegalForge! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 

@@ -38,8 +38,8 @@ export default function Dashboard() {
           actions={actions}
           videoThumbnail="/lawyer.png"
           videoSrc="/WhatsApp%20Video%202026-05-06%20at%201.39.10%20PM.mp4"
-          videoTitle="JurisAI Product Walkthrough"
-          videoDescription="See how JurisAI streamlines legal research, draft generation, and case tracking in one workspace."
+          videoTitle="LegalForge Product Walkthrough"
+          videoDescription="See how LegalForge streamlines legal research, draft generation, and case tracking in one workspace."
         />
       </div>
     </div>

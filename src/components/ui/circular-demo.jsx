@@ -11,7 +11,7 @@ const testimonials = [
   },
   {
     quote:
-      "Integrating JurisAI into our corporate workflow was the best decision we made this quarter. The compliance matrix is flawless.",
+      "Integrating LegalForge into our corporate workflow was the best decision we made this quarter. The compliance matrix is flawless.",
     name: "Aria Gupta",
     designation: "International Arbitration Lead",
     src: "https://images.unsplash.com/photo-1551836022-d5d8b5c7190b?q=80&w=3540&auto=format&fit=crop",

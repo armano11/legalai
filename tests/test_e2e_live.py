@@ -26,7 +26,7 @@ with sync_playwright() as p:
     print("TEST 1: LANDING PAGE")
     print("=" * 70)
     wait_for_page("/")
-    check("Page loads", "JurisAI" in page.inner_text("body"))
+    check("Page loads", "LegalForge" in page.inner_text("body"))
     check("Initiate Protocol visible", page.locator("text=Initiate Protocol").count() > 0)
 
     # TEST 2: Login page

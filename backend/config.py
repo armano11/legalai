@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # ─── Application ─────────────────────────────────────────────────────────
-    APP_NAME: str = "JurisAI"
+    APP_NAME: str = "LegalForge"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = Field(default="development", validation_alias="ENV")
     DEBUG: bool = False
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     LEGAL_DATA_DIR: Path = BASE_DIR / "legal_data"
     CHROMA_DIR: Path = BASE_DIR / "chroma_db"
     ASSETS_DIR: Path = BASE_DIR / "assets"
-    LOGO_PATH: Path = BASE_DIR / "assets" / "jurisai_logo.png"
+    LOGO_PATH: Path = BASE_DIR / "assets" / "legalforge_logo.png"
 
     @field_validator("UPLOAD_DIR", "GENERATED_DIR", "TEMPLATE_DIR", "LEGAL_DATA_DIR", "CHROMA_DIR", "ASSETS_DIR", mode="before")
     @classmethod
@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_EXPIRY_HOURS: int = 24
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    JWT_ISSUER: str = "jurisai"
-    JWT_AUDIENCE: str = "jurisai-api"
+    JWT_ISSUER: str = "legalforge"
+    JWT_AUDIENCE: str = "legalforge-api"
 
     APP_CORE_TOKEN: str = Field(default="")
     ENCRYPTION_KEY: str = Field(default="", min_length=32)
@@ -145,8 +145,8 @@ class Settings(BaseSettings):
 
     # ─── Email (Resend) ─────────────────────────────────────────────────────
     RESEND_API_KEY: str = Field(default="")
-    EMAIL_FROM: str = "noreply@jurisai.legal"
-    EMAIL_FROM_NAME: str = "JurisAI"
+    EMAIL_FROM: str = "noreply@legalforge.legal"
+    EMAIL_FROM_NAME: str = "LegalForge"
 
     # ─── File Upload ────────────────────────────────────────────────────────
     MAX_FILE_SIZE_MB: int = 20
@@ -171,7 +171,7 @@ class Settings(BaseSettings):
 
     # ─── Monitoring & Observability ────────────────────────────────────────
     OTEL_ENABLED: bool = True
-    OTEL_SERVICE_NAME: str = "jurisai-api"
+    OTEL_SERVICE_NAME: str = "legalforge-api"
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
     OTEL_EXPORTER_OTLP_HEADERS: str = ""
     LOG_FORMAT: str = "json"  # json or console
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = Field(default="")
     DEFAULT_ADMIN_PASSWORD: str = Field(default="", min_length=10)
     DEFAULT_ADMIN_FIRM_ID: str = "JA-DEFAULT"
-    DEFAULT_ADMIN_FIRM_NAME: str = "JurisAI Legal"
+    DEFAULT_ADMIN_FIRM_NAME: str = "LegalForge Legal"
 
     # ─── Legal Paper Analysis ──────────────────────────────────────────────
     LEGAL_PAPER_ENABLE_NEURAL_AUDIT: bool = False

@@ -134,3 +134,63 @@ async def research_stream(req: SynthesisRequest, authorization: str = Header(Non
     """Real-time SSE streaming endpoint for AI Markdown."""
     from ai.llm_fallback import stream_deep_processing
     return StreamingResponse(stream_deep_processing(req.query, req.context), media_type="text/event-stream")
+
+
+# ─── Deep Research Endpoints ────────────────────────────────────────────────
+
+from database.schemas import DeepResearchRequest, DeepResearchTaskResponse, DeepResearchSource
+
+@router.post("/research/deep", response_model=DeepResearchTaskResponse)
+async def deep_research_start(req: DeepResearchRequest, authorization: str = Header(None)):
+    """Launch a 5-person deep research team in the background. Returns a task_id for polling."""
+    from services.scrapling_research_service import start_deep_research, get_deep_task
+
+    if not req.query or len(req.query.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Query must be at least 3 characters.")
+
+    task_id = start_deep_research(req.query, max_sources=req.max_sources)
+    task = get_deep_task(task_id)
+
+    return DeepResearchTaskResponse(
+        task_id=task_id,
+        query=task["query"],
+        status=task["status"],
+        progress=task["progress"],
+        phase=task["phase"],
+        sources_found=task["sources_found"],
+        error=task.get("error"),
+    )
+
+
+@router.get("/research/deep/status/{task_id}", response_model=DeepResearchTaskResponse)
+async def deep_research_status(task_id: str):
+    """Poll deep research task status and results."""
+    from services.scrapling_research_service import get_deep_task
+
+    task = get_deep_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Research task not found (expired or invalid).")
+
+    sources = []
+    if task.get("all_sources"):
+        for s in task["all_sources"]:
+            sources.append(DeepResearchSource(
+                title=s.get("title", "Source"),
+                url=s.get("url", ""),
+                snippet=(s.get("markdown") or s.get("snippet", ""))[:300],
+                content=(s.get("markdown") or s.get("snippet", ""))[:2000],
+                source=s.get("source", "Scrapling"),
+                phase="discovery",
+            ))
+
+    return DeepResearchTaskResponse(
+        task_id=task["task_id"],
+        query=task["query"],
+        status=task["status"],
+        progress=task["progress"],
+        phase=task["phase"],
+        sources_found=task["sources_found"],
+        sources=sources,
+        synthesis=task.get("synthesis"),
+        error=task.get("error"),
+    )

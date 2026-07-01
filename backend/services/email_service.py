@@ -56,7 +56,7 @@ def _build_reminder_html(event: dict) -> str:
         <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
             <div style="text-align:center;margin-bottom:32px;">
                 <div style="display:inline-block;background:linear-gradient(135deg,#00F0FF,#8E2DE2);-webkit-text-fill-color:transparent;-webkit-background-clip:text;font-size:28px;font-weight:800;letter-spacing:-0.5px;">
-                    JurisAI
+                    LegalForge
                 </div>
                 <p style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:2px;margin-top:8px;">
                     Legal Intelligence Platform
@@ -102,7 +102,7 @@ def _build_reminder_html(event: dict) -> str:
             </div>
             <div style="text-align:center;margin-top:24px;padding:16px;">
                 <p style="color:#334155;font-size:11px;margin:0;">
-                    Sent via JurisAI Legal Intelligence Platform<br/>
+                    Sent via LegalForge Legal Intelligence Platform<br/>
                     This is an automated reminder. Please do not reply to this email.
                 </p>
             </div>
@@ -123,13 +123,13 @@ def send_hearing_reminder(event: dict, client_email: str) -> dict:
         }
 
     html_content = _build_reminder_html(event)
-    subject = f"📋 JurisAI Hearing Reminder: {event.get('title', 'Upcoming Hearing')} — {event.get('date', '')}"
+    subject = f"📋 LegalForge Hearing Reminder: {event.get('title', 'Upcoming Hearing')} — {event.get('date', '')}"
 
     try:
         # Note: In production you need a verified domain. 
         # For testing, Resend allows sending to the verified email address or using 'onboarding@resend.dev'
         params: resend.Emails.SendParams = {
-            "from": "JurisAI <onboarding@resend.dev>",
+            "from": "LegalForge <onboarding@resend.dev>",
             "to": [client_email],
             "subject": subject,
             "html": html_content,
@@ -168,13 +168,13 @@ def send_case_reminder(case: dict, recipient_email: str) -> dict:
             <p><strong>Deadline:</strong> <span style="color: #EF4444; font-weight: bold;">{deadline}</span></p>
             <p><strong>Notes:</strong> {description}</p>
         </div>
-        <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">Sent via JurisAI SaaS Platform</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">Sent via LegalForge SaaS Platform</p>
     </div>
     """
 
     try:
         params: resend.Emails.SendParams = {
-            "from": "JurisAI <onboarding@resend.dev>",
+            "from": "LegalForge <onboarding@resend.dev>",
             "to": [recipient_email],
             "subject": subject,
             "html": html_content,

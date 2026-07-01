@@ -13,11 +13,11 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)-25s | %(message)s",
     datefmt="%H:%M:%S"
 )
-logger = logging.getLogger("jurisai")
+logger = logging.getLogger("legalforge")
 
 # --- Create FastAPI App ---
 app = FastAPI(
-    title="JurisAI API",
+    title="LegalForge API",
     description="AI-Powered Legal Intelligence Platform — Backend API",
     version="2.0.0"
 )
@@ -92,7 +92,7 @@ if os.path.isdir(DIST_DIR):
 async def root():
     return {
         "status": "online",
-        "service": "JurisAI API",
+        "service": "LegalForge API",
         "version": "2.0.0",
         "docs": "/docs"
     }
@@ -159,7 +159,7 @@ async def health():
 @app.on_event("startup")
 async def startup():
     logger.info("=" * 60)
-    logger.info("  JurisAI API Server Starting...")
+    logger.info("  LegalForge API Server Starting...")
     logger.info("=" * 60)
 
     # Ensure directories exist
@@ -197,7 +197,7 @@ async def startup():
     except Exception as e:
         logger.warning(f"Vector store initialization skipped: {e}")
 
-    logger.info("JurisAI API is ready.")
+    logger.info("LegalForge API is ready.")
     logger.info("Docs: http://localhost:8000/docs")
 
 

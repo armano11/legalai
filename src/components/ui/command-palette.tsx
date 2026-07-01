@@ -130,7 +130,7 @@ export function CommandPalette({ isOpen, onClose }: { isOpen: boolean; onClose: 
                <span className="px-1 py-0.5 border border-border-charcoal bg-black">↵</span> Select
              </span>
           </div>
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest font-bold">JurisAI Core v2.5</p>
+          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest font-bold">LegalForge Core v2.5</p>
         </div>
       </motion.div>
     </div>

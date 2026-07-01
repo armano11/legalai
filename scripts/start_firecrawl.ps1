@@ -1,4 +1,4 @@
-# JurisAI - Firecrawl Local Infrastructure Starter
+# LegalForge - Firecrawl Local Infrastructure Starter
 # This script launches the multi-container scraping stack required for premium web research.
 
 Write-Host "Initializing Firecrawl local infrastructure..." -ForegroundColor Cyan

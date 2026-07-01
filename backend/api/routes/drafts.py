@@ -113,7 +113,7 @@ async def download_draft(draft_id: str):
     return FileResponse(
         path=file_path,
         media_type="application/pdf",
-        filename=f"JurisAI_Draft_{draft_id}.pdf",
+        filename=f"LegalForge_Draft_{draft_id}.pdf",
     )
 
 
@@ -125,5 +125,5 @@ async def download_batch(batch_id: str):
     return FileResponse(
         path=file_path,
         media_type="application/zip",
-        filename=f"JurisAI_Batch_{batch_id}.zip",
+        filename=f"LegalForge_Batch_{batch_id}.zip",
     )

@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚖️ JurisAI
+# ⚖️ LegalForge
 
 **AI-Powered Legal Intelligence Platform**
 
@@ -15,26 +15,26 @@
 
 ---
 
-JurisAI is a full-stack legal intelligence platform that combines AI-powered document drafting, semantic legal research, and case management in a modern web interface. Built for Indian legal practice with support for NVIDIA Gemma-3n, local LLMs (Ollama), and Scrapling-powered web research.
+LegalForge is a full-stack legal intelligence platform that combines AI-powered document drafting, semantic legal research, and case management in a modern web interface. Built for Indian legal practice with support for NVIDIA Gemma-3n, local LLMs (Ollama), and Scrapling-powered web research.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td><img src="docs/landing.png" alt="Landing Page" width="400"/></td>
-    <td><img src="docs/login.png" alt="Login" width="400"/></td>
+    <td><img src="docs/hero.png" alt="Hero Section" width="400"/></td>
+    <td><img src="docs/login-filled.png" alt="Login Form" width="400"/></td>
   </tr>
   <tr>
-    <td align="center"><em>Editorial landing page</em></td>
-    <td align="center"><em>Login with animated characters</em></td>
+    <td align="center"><em>Editorial hero section with GSAP animations</em></td>
+    <td align="center"><em>Login with credentials filled</em></td>
   </tr>
   <tr>
     <td><img src="docs/track.png" alt="Case Tracking" width="400"/></td>
-    <td><img src="docs/404.png" alt="404 Page" width="400"/></td>
+    <td width="400"></td>
   </tr>
   <tr>
     <td align="center"><em>Public case tracking portal</em></td>
-    <td align="center"><em>Custom 404 page</em></td>
+    <td align="center"></td>
   </tr>
 </table>
 

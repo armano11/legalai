@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Complete Verification Test Suite for JurisAI
+Complete Verification Test Suite for LegalForge
 Tests: NVIDIA API, Research Pipeline, Case Backend, and Twilio Integration
 """
 
@@ -246,7 +246,7 @@ class CaseBackendTester:
         case_data = {
             "title": "Test Case - Section 302 IPC",
             "description": "Test case for verification",
-            "lawyer_email": "admin@jurisai.local",
+            "lawyer_email": "admin@legalforge.local",
             "lawyer_name": "Test Lawyer",
             "client_name": "Test Client",
             "client_email": "client@test.com",
@@ -485,7 +485,7 @@ class SupabaseTester:
 async def run_all_tests():
     """Run all verification tests."""
     logger.info("\n" + "=" * 80)
-    logger.info("JURISAI FULL PROJECT VERIFICATION")
+    logger.info("LEGALFORGE FULL PROJECT VERIFICATION")
     logger.info("=" * 80)
     logger.info(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 

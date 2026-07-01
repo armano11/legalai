@@ -35,7 +35,7 @@ def create_mock_case():
     case_data = {
         "title": "Sharma vs. Desai - Property Dispute",
         "description": "Test case for Twilio verification",
-        "lawyer_email": "admin@jurisai.local",
+        "lawyer_email": "admin@legalforge.local",
         "lawyer_name": "Rajesh Kumar",
         "client_name": "Priya Sharma",
         "client_email": "priya@test.com",

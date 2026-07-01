@@ -341,7 +341,7 @@ const normalizeLawyer = (lawyer, index) => {
     current_cases: currentCases,
   }, index);
 };
-const PROFILE_STORAGE_KEY = 'jurisai_lawyer_profile_details';
+const PROFILE_STORAGE_KEY = 'legalforge_lawyer_profile_details';
 
 const readStoredProfiles = () => {
   try {
@@ -804,7 +804,7 @@ export default function LawyerDirectory() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-emerald-300/75">Workspace Leadership</p>
-                <h2 className="mt-3 text-2xl font-semibold text-white">{workspaceLead?.name || 'JurisAI Workspace Admin'}</h2>
+                <h2 className="mt-3 text-2xl font-semibold text-white">{workspaceLead?.name || 'LegalForge Workspace Admin'}</h2>
                 <p className="mt-2 text-sm leading-6 text-white/55">{workspaceLead?.bio || 'This workspace is managed with firm-level controls. Attorneys who register with the firm code are expected to appear in the roster and case assignment workflow automatically.'}</p>
               </div>
               <img src={workspaceLead?.src || 'https://ui-avatars.com/api/?name=Workspace+Admin'} alt={workspaceLead?.name || 'Workspace Admin'} className="h-16 w-16 rounded-2xl border border-white/10 object-cover" />
@@ -812,7 +812,7 @@ export default function LawyerDirectory() {
 
             <div className="mt-6 space-y-3 text-sm text-white/70">
               <div className="flex items-center gap-3"><Building2 className="h-4 w-4 text-amber-200" /><span>{workspaceLead?.firm_name || user?.firm_name || 'LegalAI Workspace'}</span></div>
-              <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-amber-200" /><span>{workspaceLead?.email || 'admin@jurisai.com'}</span></div>
+              <div className="flex items-center gap-3"><Mail className="h-4 w-4 text-amber-200" /><span>{workspaceLead?.email || 'admin@legalforge.com'}</span></div>
             </div>
 
             <div className="mt-6 rounded-[1.3rem] border border-white/8 bg-black/20 p-4">

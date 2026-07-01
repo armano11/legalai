@@ -15,7 +15,7 @@ export function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchNotifications = useCallback(async () => {
-    const token = localStorage.getItem('jurisai_token');
+    const token = localStorage.getItem('legalforge_token');
     if (!token) return;
     try {
       const res = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${token}` } });
@@ -37,7 +37,7 @@ export function Navbar() {
   }, [user, fetchNotifications]);
 
   const markAllRead = async () => {
-    const token = localStorage.getItem('jurisai_token');
+    const token = localStorage.getItem('legalforge_token');
     try {
       await fetch('/api/notifications/read-all', { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
       setUnreadCount(0);
@@ -48,7 +48,7 @@ export function Navbar() {
   };
 
   const markRead = async (id) => {
-    const token = localStorage.getItem('jurisai_token');
+    const token = localStorage.getItem('legalforge_token');
     try {
       await fetch(`/api/notifications/${id}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
@@ -92,7 +92,7 @@ export function Navbar() {
               <Scale className="h-4 w-4 text-primary group-hover:text-white transition-colors" />
             </div>
             <span className="font-bold text-lg tracking-tight text-white uppercase">
-              Juris<span className="text-primary-violet italic">AI</span>
+              Legal<span className="text-primary-violet italic">Forge</span>
             </span>
           </Link>
 

@@ -18,11 +18,32 @@ def _build_reminder_html(event: dict) -> str:
     """Build a professional HTML email for hearing reminders."""
     title = event.get("title", "Upcoming Hearing")
     date = event.get("date", "")
-    time = event.get("time", "")
+    time_val = event.get("time", "")
     court = event.get("court", "")
     case_no = event.get("case_no", "")
     description = event.get("description", "")
     client_name = event.get("client_name", "Client")
+
+    time_row = (
+        '<tr><td style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;">Time</td>'
+        '<td style="color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;">' + time_val + '</td></tr>'
+    ) if time_val else ""
+
+    court_row = (
+        '<tr><td style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;">Court</td>'
+        '<td style="color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;">' + court + '</td></tr>'
+    ) if court else ""
+
+    case_no_row = (
+        '<tr><td style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;">Case No.</td>'
+        '<td style="color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;font-family:monospace;">' + case_no + '</td></tr>'
+    ) if case_no else ""
+
+    notes_block = (
+        '<div style="background:rgba(0,240,255,0.05);border:1px solid rgba(0,240,255,0.1);border-radius:8px;padding:16px;margin-bottom:24px;">'
+        '<p style="color:#94a3b8;font-size:13px;margin:0;line-height:1.6;">'
+        '<strong style="color:#00F0FF;">Notes:</strong> ' + description + '</p></div>'
+    ) if description else ""
 
     return f"""
     <!DOCTYPE html>
@@ -33,7 +54,6 @@ def _build_reminder_html(event: dict) -> str:
     </head>
     <body style="margin:0;padding:0;background-color:#030303;font-family:'Segoe UI',Arial,sans-serif;">
         <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
-            <!-- Header -->
             <div style="text-align:center;margin-bottom:32px;">
                 <div style="display:inline-block;background:linear-gradient(135deg,#00F0FF,#8E2DE2);-webkit-text-fill-color:transparent;-webkit-background-clip:text;font-size:28px;font-weight:800;letter-spacing:-0.5px;">
                     JurisAI
@@ -42,17 +62,12 @@ def _build_reminder_html(event: dict) -> str:
                     Legal Intelligence Platform
                 </p>
             </div>
-
-            <!-- Main Card -->
             <div style="background:#0A0E17;border:1px solid rgba(255,255,255,0.1);border-radius:16px;overflow:hidden;">
-                <!-- Alert Bar -->
                 <div style="background:linear-gradient(90deg,#F59E0B20,#EF444420);padding:12px 24px;border-bottom:1px solid rgba(255,255,255,0.05);">
                     <span style="color:#F59E0B;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
-                        ⚡ Hearing Reminder
+                        &#9889; Hearing Reminder
                     </span>
                 </div>
-
-                <!-- Content -->
                 <div style="padding:32px 24px;">
                     <p style="color:#94a3b8;font-size:14px;margin:0 0 24px;">
                         Dear <strong style="color:white;">{client_name}</strong>,
@@ -60,8 +75,6 @@ def _build_reminder_html(event: dict) -> str:
                     <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 24px;">
                         This is a reminder that you have an upcoming court hearing. Please find the details below:
                     </p>
-
-                    <!-- Details Box -->
                     <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;margin-bottom:24px;">
                         <table style="width:100%;border-collapse:collapse;">
                             <tr>
@@ -72,14 +85,12 @@ def _build_reminder_html(event: dict) -> str:
                                 <td style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;">Date</td>
                                 <td style="color:#00F0FF;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;text-align:right;">{date}</td>
                             </tr>
-                            {"<tr><td style='color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;'>Time</td><td style='color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;'>" + time + "</td></tr>" if time else ""}
-                            {"<tr><td style='color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;'>Court</td><td style='color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;'>" + court + "</td></tr>" if court else ""}
-                            {"<tr><td style='color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:700;'>Case No.</td><td style='color:white;font-size:14px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);font-weight:600;text-align:right;font-family:monospace;'>" + case_no + "</td></tr>" if case_no else ""}
+                            {time_row}
+                            {court_row}
+                            {case_no_row}
                         </table>
                     </div>
-
-                    {"<div style='background:rgba(0,240,255,0.05);border:1px solid rgba(0,240,255,0.1);border-radius:8px;padding:16px;margin-bottom:24px;'><p style='color:#94a3b8;font-size:13px;margin:0;line-height:1.6;'><strong style=\"color:#00F0FF;\">Notes:</strong> " + description + "</p></div>" if description else ""}
-
+                    {notes_block}
                     <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 8px;">
                         Please ensure you carry all relevant documents and arrive at least 30 minutes before the scheduled time.
                     </p>
@@ -89,8 +100,6 @@ def _build_reminder_html(event: dict) -> str:
                     </p>
                 </div>
             </div>
-
-            <!-- Footer -->
             <div style="text-align:center;margin-top:24px;padding:16px;">
                 <p style="color:#334155;font-size:11px;margin:0;">
                     Sent via JurisAI Legal Intelligence Platform<br/>

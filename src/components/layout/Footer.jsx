@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Scale } from 'lucide-react';
 
-export default function Footer() {
+export function Footer() {
   return (
     <footer className="w-full border-t border-border bg-background py-14 mt-auto">
       <div className="container mx-auto px-6 lg:px-8">

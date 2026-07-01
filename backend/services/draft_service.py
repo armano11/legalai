@@ -3,6 +3,9 @@ import uuid
 import logging
 import re
 import asyncio
+import json
+import zipfile
+from io import BytesIO
 from datetime import datetime, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Store generated PDFs info in memory (replaces MongoDB)
 _generated_drafts = {}
+_batch_archives = {}
 
 # --- Template definitions ---
 BUILTIN_TEMPLATES = {
@@ -709,7 +713,175 @@ async def fix_weak_points(draft_text: str, issues: str) -> str:
     except Exception as e:
         logger.error(f"Failed to use LLM to fix draft: {e}")
     
-    # Fallback to rule-based fixing if LLM fails
     fixed = draft_text.replace("may", "shall").replace("might", "will")
     fixed += "\n\n[Clause Added for Robustness: This agreement is fully integrated and supersedes all prior representations.]"
     return fixed
+
+
+async def ai_modify_template(doc_type: str, case_description: str, template_modifications: list[str], tone: str) -> str:
+    """Ask AI to modify the base template based on user intent and specific modifications."""
+    base_template = load_template(doc_type)
+    mods_text = "\n".join(f"- {m}" for m in template_modifications) if template_modifications else "No specific modifications requested."
+
+    prompt = f"""Modify this legal template based on the case context and requested modifications.
+
+Document Type: {doc_type}
+Tone: {tone}
+
+Case Description:
+{case_description}
+
+Requested Template Modifications:
+{mods_text}
+
+Current Template:
+{base_template}
+
+Requirements:
+1. Apply all requested modifications to the template structure
+2. Adjust clauses, add new sections, or remove irrelevant ones based on the case context
+3. Keep all {{variable}} placeholders intact (date, ref_no, client_name, opposing_party, case_description)
+4. Add new {{variable}} placeholders if needed for the modifications
+5. Return ONLY the modified template text
+
+Modified Template:"""
+
+    try:
+        result = generate_text(prompt, kind="document", temperature=0.15, max_tokens=2500)
+        modified = result.get("text", "")
+        if modified and len(modified) > 100:
+            # Verify placeholders still exist
+            required = ["{date}", "{ref_no}", "{client_name}", "{opposing_party}", "{case_description}"]
+            missing = [r for r in required if r not in modified]
+            if missing:
+                logger.warning(f"Template modification removed placeholders: {missing}, using original")
+                return base_template
+            return modified
+    except Exception as e:
+        logger.warning(f"AI template modification failed: {e}")
+
+    return base_template
+
+
+async def generate_bulk_drafts(
+    doc_type: str,
+    entries: list[dict],
+    case_description: str,
+    firm_name: str = "",
+    tone: str = "Neutral",
+    template_modifications: list[str] = None,
+) -> dict:
+    """Generate multiple drafts in batch from a list of entry data."""
+    batch_id = uuid.uuid4().hex[:12]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    drafts = []
+    total = len(entries)
+    successful = 0
+
+    base_template = load_template(doc_type)
+
+    if template_modifications:
+        modified_template = await ai_modify_template(doc_type, case_description, template_modifications, tone)
+    else:
+        modified_template = base_template
+
+    for idx, entry in enumerate(entries):
+        try:
+            client_name = entry.get("client_name", "")
+            opposing_party = entry.get("opposing_party", "")
+            extra_vars = entry.get("variables", {})
+
+            draft_id = uuid.uuid4().hex[:12]
+            ref_no = uuid.uuid4().hex[:8].upper()
+
+            filled_text = modified_template.format(
+                date=datetime.now().strftime("%B %d, %Y"),
+                ref_no=ref_no,
+                client_name=client_name or "[Client Name]",
+                opposing_party=opposing_party or "[Opposing Party]",
+                case_description=case_description or "[Case description not provided]",
+                **extra_vars,
+            )
+
+            prompt = _draft_prompt(doc_type, client_name, opposing_party, case_description, firm_name, tone, filled_text)
+            try:
+                ai_result = await asyncio.wait_for(
+                    asyncio.to_thread(generate_text, prompt, "document", 0.15, 2200),
+                    timeout=18,
+                )
+                neural_text = ai_result.get("text", "")
+            except (AIGatewayError, TimeoutError) as exc:
+                logger.warning(f"Bulk draft {idx} used fallback: {exc}")
+                neural_text = ""
+
+            final_text = neural_text if (neural_text and len(neural_text) > 240) else filled_text
+            pdf_path = await asyncio.to_thread(generate_pdf, final_text, doc_type, draft_id, firm_name)
+
+            _generated_drafts[draft_id] = {
+                "draft_id": draft_id,
+                "document_type": doc_type,
+                "file_path": pdf_path,
+                "preview_text": final_text,
+                "generated_draft": final_text,
+                "client_name": client_name,
+                "batch_id": batch_id,
+                "created_at": now_iso,
+            }
+
+            drafts.append({
+                "index": idx,
+                "client_name": client_name,
+                "draft_id": draft_id,
+                "preview_text": final_text[:500],
+                "download_url": f"/api/download-draft/{draft_id}",
+            })
+            successful += 1
+
+            try:
+                db_id = firm_name if isinstance(firm_name, (int, str)) else None
+                supabase.table("draft_history").insert({
+                    "user_id": db_id,
+                    "doc_type": doc_type,
+                    "draft_id": draft_id,
+                    "client_name": client_name,
+                    "timestamp": now_iso,
+                    "batch_id": batch_id,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"Bulk draft history persist failed: {e}")
+
+        except Exception as e:
+            logger.error(f"Bulk draft entry {idx} failed: {e}")
+
+    zip_url = await _create_batch_zip(batch_id, drafts)
+
+    return {
+        "batch_id": batch_id,
+        "total": total,
+        "successful": successful,
+        "drafts": drafts,
+        "zip_download_url": zip_url,
+    }
+
+
+async def _create_batch_zip(batch_id: str, drafts: list[dict]) -> str:
+    """Create a ZIP archive of all PDFs in a batch."""
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for d in drafts:
+            info = _generated_drafts.get(d["draft_id"])
+            if info and os.path.exists(info.get("file_path", "")):
+                safe_name = re.sub(r"[^\w\s-]", "", d["client_name"]).strip() or "draft"
+                arcname = f"{safe_name}_{d['draft_id'][:8]}.pdf"
+                zf.write(info["file_path"], arcname)
+
+    zip_path = os.path.join(GENERATED_DIR, f"batch_{batch_id}.zip")
+    with open(zip_path, "wb") as f:
+        f.write(buffer.getvalue())
+
+    _batch_archives[batch_id] = zip_path
+    return f"/api/download-batch/{batch_id}"
+
+
+def get_batch_zip_path(batch_id: str) -> str:
+    return _batch_archives.get(batch_id, "")

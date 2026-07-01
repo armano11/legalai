@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, Activity, FileText, Search, Shield, Copy, 
@@ -8,6 +8,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../components/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
 
@@ -21,6 +22,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [userActivities, setUserActivities] = useState([]);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const { token, user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -83,11 +85,11 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
     try {
       await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
+      setDeleteConfirm(null);
       setSelectedUserId(null);
       loadData();
     } catch (err) { console.error('Delete failed:', err); }
@@ -273,7 +275,7 @@ export default function AdminDashboard() {
                             <button onClick={() => viewUserActivity(u.id)} className="p-2 hover:bg-primary/10 rounded-xl transition-all text-foreground/20 hover:text-foreground">
                               <Eye className="w-4 h-4" />
                             </button>
-                            <button onClick={() => handleDeleteUser(u.id)} className="p-2 hover:bg-primary/10 rounded-xl transition-all text-foreground/20 hover:text-foreground">
+                            <button onClick={() => setDeleteConfirm(u.id)} className="p-2 hover:bg-primary/10 rounded-xl transition-all text-foreground/20 hover:text-foreground">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -316,6 +318,25 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this user? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 rounded-lg border border-border text-foreground text-sm">
+              Cancel
+            </button>
+            <button onClick={() => handleDeleteUser(deleteConfirm)} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium">
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

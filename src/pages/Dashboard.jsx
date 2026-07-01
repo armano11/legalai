@@ -1,9 +1,10 @@
-import * as React from "react";
 import { WorkspaceWelcome } from "@/components/ui/welcome";
 import { Scissors, Video, Signal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../components/AuthContext";
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const actions = [
@@ -33,7 +34,7 @@ export default function Dashboard() {
 
       <div className="relative z-10 w-full flex justify-center">
         <WorkspaceWelcome
-          userName="Counsel"
+          userName={user?.name || "Counsel"}
           actions={actions}
           videoThumbnail="/lawyer.png"
           videoSrc="/WhatsApp%20Video%202026-05-06%20at%201.39.10%20PM.mp4"

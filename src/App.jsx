@@ -1,11 +1,10 @@
-import React, { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { ThemeProvider } from './components/ThemeContext';
 import { Navbar } from './components/layout/Navbar';
 import { ResearchProvider } from './components/ResearchContext';
 import { CommandPalette } from './components/ui/command-palette';
-import { useState, useEffect } from 'react';
 
 // Lazy loading pages
 const LandingPage = lazy(() => import('./pages/LandingPage'));

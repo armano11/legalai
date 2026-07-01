@@ -140,7 +140,7 @@ def run():
     except Exception as exc:
         results.append(_print_result("generate draft", False, str(exc)))
 
-    # 5) Twilio trigger (add hearing, then call reminder)
+    # 5) Add hearing to case
     if case_id:
         hearing_resp = _req("POST", f"/api/lawyers/cases/{case_id}/hearings", headers=admin_headers, json={
             "date": "2026-05-20",
@@ -151,17 +151,6 @@ def run():
         })
         hearing_ok = hearing_resp.status_code == 200 and "hearing" in hearing_resp.json()
         results.append(_print_result("add hearing", hearing_ok, f"{hearing_resp.status_code}"))
-
-        hearing_id = hearing_resp.json().get("hearing", {}).get("id") if hearing_ok else None
-        if hearing_id:
-            twilio_resp = _req(
-                "POST",
-                f"/api/lawyers/cases/{case_id}/hearings/{hearing_id}/remind-client-twilio",
-                headers=admin_headers
-            )
-            # Count as pass if integration endpoint executes and returns deterministic response
-            twilio_ok = twilio_resp.status_code in (200, 500, 503)
-            results.append(_print_result("twilio reminder endpoint reached", twilio_ok, f"{twilio_resp.status_code} {twilio_resp.text[:180]}"))
 
     passed = sum(1 for x in results if x)
     total = len(results)

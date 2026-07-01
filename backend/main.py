@@ -1,6 +1,5 @@
 import logging
 import asyncio
-import contextlib
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -200,27 +199,6 @@ async def startup():
 
     logger.info("JurisAI API is ready.")
     logger.info("Docs: http://localhost:8000/docs")
-    app.state.auto_reminder_task = asyncio.create_task(_auto_reminder_loop())
-
-
-async def _auto_reminder_loop():
-    """Periodic worker for automatic Twilio hearing reminder calls."""
-    while True:
-        try:
-            from api.routes.lawyers import run_auto_hearing_call_reminders
-            await asyncio.to_thread(run_auto_hearing_call_reminders)
-        except Exception as e:
-            logger.error(f"Auto reminder loop error: {e}")
-        await asyncio.sleep(1800)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    task = getattr(app.state, "auto_reminder_task", None)
-    if task:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
 
 
 

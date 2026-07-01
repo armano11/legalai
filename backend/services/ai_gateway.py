@@ -1,12 +1,12 @@
 import logging
 import json
 import requests
-from config import APP_CORE_TOKEN
+from config import APP_CORE_TOKEN, OPENROUTER_RESEARCH_MODEL
 
 logger = logging.getLogger(__name__)
 
 AI_ENABLE_MANAGED_MODELS = True
-NVIDIA_RESEARCH_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+NVIDIA_RESEARCH_MODEL = OPENROUTER_RESEARCH_MODEL
 
 class AIGatewayError(Exception):
     pass

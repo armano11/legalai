@@ -1,122 +1,205 @@
-import os
-from dotenv import load_dotenv
+from functools import lru_cache
+from pathlib import Path
+from typing import List, Optional
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# --- Paths ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-# --- Paths ---
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-GENERATED_DIR = os.path.join(BASE_DIR, "generated_documents")
-TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
-LEGAL_DATA_DIR = os.path.join(BASE_DIR, "legal_data")
-CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
-# Create directories if they don't exist
-for d in [UPLOAD_DIR, GENERATED_DIR, TEMPLATE_DIR, LEGAL_DATA_DIR, CHROMA_DIR]:
-    os.makedirs(d, exist_ok=True)
-# --- JWT Auth ---
-# Dev-safe fallback prevents "signup succeeds but login fails" when JWT_SECRET is missing.
-# In production, set JWT_SECRET explicitly via environment variable.
-JWT_SECRET = os.environ.get("JWT_SECRET", "jurisai-dev-secret-change-me")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
+    # ─── Application ─────────────────────────────────────────────────────────
+    APP_NAME: str = "JurisAI"
+    APP_VERSION: str = "2.0.0"
+    ENVIRONMENT: str = Field(default="development", validation_alias="ENV")
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
 
-# --- AI Models ---
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-CHROMA_COLLECTION = "legal_documents"
-RAG_SIMILARITY_THRESHOLD = 0.40
-RAG_TOP_K = 5
+    # ─── Paths ──────────────────────────────────────────────────────────────
+    BASE_DIR: Path = Path(__file__).parent
+    UPLOAD_DIR: Path = BASE_DIR / "uploads"
+    GENERATED_DIR: Path = BASE_DIR / "generated_documents"
+    TEMPLATE_DIR: Path = BASE_DIR / "templates"
+    LEGAL_DATA_DIR: Path = BASE_DIR / "legal_data"
+    CHROMA_DIR: Path = BASE_DIR / "chroma_db"
+    ASSETS_DIR: Path = BASE_DIR / "assets"
+    LOGO_PATH: Path = BASE_DIR / "assets" / "jurisai_logo.png"
 
-# --- Ollama Configuration ---
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
-OLLAMA_BACKUP_MODEL = os.environ.get("OLLAMA_BACKUP_MODEL", "qwen2.5:7b")
+    @field_validator("UPLOAD_DIR", "GENERATED_DIR", "TEMPLATE_DIR", "LEGAL_DATA_DIR", "CHROMA_DIR", "ASSETS_DIR", mode="before")
+    @classmethod
+    def _ensure_dirs(cls, v: Path) -> Path:
+        v.mkdir(parents=True, exist_ok=True)
+        return v
 
-# --- Firecrawl Web Research ---
-FIRECRAWL_ENABLED = os.environ.get("FIRECRAWL_ENABLED", "false").lower() == "true"
-FIRECRAWL_BASE_URL = os.environ.get("FIRECRAWL_BASE_URL", "").rstrip("/")
-FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
-FIRECRAWL_TIMEOUT_SECONDS = int(os.environ.get("FIRECRAWL_TIMEOUT_SECONDS", "30"))
-FIRECRAWL_SEARCH_LIMIT = int(os.environ.get("FIRECRAWL_SEARCH_LIMIT", "3"))
+    # ─── Security (NO DEFAULTS FOR SECRETS) ─────────────────────────────────
+    JWT_SECRET: str = Field(..., min_length=32)
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_EXPIRY_HOURS: int = 24
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    JWT_ISSUER: str = "jurisai"
+    JWT_AUDIENCE: str = "jurisai-api"
 
-# --- Managed AI Gateway ---
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_PRIMARY_MODEL = os.environ.get(
-    "OPENROUTER_PRIMARY_MODEL",
-    "meta-llama/llama-3.3-70b-instruct:free",
-)
-OPENROUTER_RESEARCH_MODEL = os.environ.get(
-    "OPENROUTER_RESEARCH_MODEL",
-    OPENROUTER_PRIMARY_MODEL,
-)
-OPENROUTER_DOCUMENT_MODEL = os.environ.get(
-    "OPENROUTER_DOCUMENT_MODEL",
-    OPENROUTER_PRIMARY_MODEL,
-)
+    APP_CORE_TOKEN: str = Field(default="")
+    ENCRYPTION_KEY: str = Field(default="", min_length=32)
 
-# --- Minimax API Configuration ---
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
-MINIMAX_BASE_URL = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.ai/v1").rstrip("/")
-MINIMAX_PRIMARY_MODEL = os.environ.get("MINIMAX_PRIMARY_MODEL", "mistral-7b")
-MINIMAX_RESEARCH_MODEL = os.environ.get(
-    "MINIMAX_RESEARCH_MODEL",
-    MINIMAX_PRIMARY_MODEL,
-)
-MINIMAX_DOCUMENT_MODEL = os.environ.get(
-    "MINIMAX_DOCUMENT_MODEL",
-    MINIMAX_PRIMARY_MODEL,
-)
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_AUTH: str = "10/minute"
+    RATE_LIMIT_SEARCH: str = "30/minute"
+    RATE_LIMIT_AI: str = "20/minute"
 
-# --- NVIDIA GLM API Configuration (OpenAI-compatible) ---
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
-NVIDIA_PRIMARY_MODEL = os.environ.get("NVIDIA_PRIMARY_MODEL", "z-ai/glm-5.1")
-NVIDIA_RESEARCH_MODEL = os.environ.get(
-    "NVIDIA_RESEARCH_MODEL",
-    NVIDIA_PRIMARY_MODEL,
-)
-NVIDIA_DOCUMENT_MODEL = os.environ.get(
-    "NVIDIA_DOCUMENT_MODEL",
-    NVIDIA_PRIMARY_MODEL,
-)
+    # CORS
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    )
 
-AI_PROVIDER = os.environ.get("AI_PROVIDER", "nvidia").lower()
-AI_HTTP_TIMEOUT_SECONDS = int(os.environ.get("AI_HTTP_TIMEOUT_SECONDS", "45"))
-AI_ENABLE_MANAGED_MODELS = os.environ.get("AI_ENABLE_MANAGED_MODELS", "true").lower() == "true"
-AI_ENABLE_LOCAL_FALLBACK = os.environ.get("AI_ENABLE_LOCAL_FALLBACK", "true").lower() == "true"
+    # ─── Database (Supabase) ────────────────────────────────────────────────
+    SUPABASE_URL: str = Field(..., pattern=r"^https://.*\.supabase\.co$")
+    SUPABASE_KEY: str = Field(..., min_length=20)
+    SUPABASE_SERVICE_KEY: str = Field(default="", min_length=20)
+    SUPABASE_POOL_SIZE: int = 20
+    SUPABASE_MAX_OVERFLOW: int = 10
 
-# --- SQLite Databases (Legacy) ---
-SQLITE_DB_PATH = os.path.join(BASE_DIR, "jurisai_auth.db")
+    # ─── AI / LLM Providers ─────────────────────────────────────────────────
+    # Primary Provider Selection
+    AI_PROVIDER: str = Field(default="openrouter", pattern="^(openrouter|nvidia|ollama|openai)$")
+    AI_ENABLE_MANAGED_MODELS: bool = True
+    AI_ENABLE_LOCAL_FALLBACK: bool = True
+    AI_HTTP_TIMEOUT_SECONDS: int = 60
+    AI_MAX_RETRIES: int = 3
+    AI_COST_LIMIT_USD_PER_DAY: float = 50.0
 
-# --- Secure Service Keys (Internal) ---
-APP_CORE_TOKEN = os.environ.get("APP_CORE_TOKEN", os.environ.get("INTERNAL_SERVICE_KEY", ""))
-LEGAL_PAPER_ENABLE_NEURAL_AUDIT = os.environ.get("LEGAL_PAPER_ENABLE_NEURAL_AUDIT", "false").lower() == "true"
-LEGAL_PAPER_NEURAL_TIMEOUT_SECONDS = int(os.environ.get("LEGAL_PAPER_NEURAL_TIMEOUT_SECONDS", "6"))
+    # OpenRouter
+    OPENROUTER_API_KEY: str = Field(default="")
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_PRIMARY_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
+    OPENROUTER_RESEARCH_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
+    OPENROUTER_DOCUMENT_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
+    OPENROUTER_SYNTHESIS_MODEL: str = "nvidia/nemotron-3-ultra:free"
 
-# --- Supabase Cloud Config ---
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lmdgukrozlxtagfszvep.supabase.co")
-SUPABASE_KEY = os.environ.get("STORAGE_SERVICE_KEY", os.environ.get("SUPABASE_KEY", ""))
+    # NVIDIA (Gemma 3n / GLM)
+    NVIDIA_API_KEY: str = Field(default="")
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_PRIMARY_MODEL: str = "google/gemma-3n-e2b-it"
+    NVIDIA_RESEARCH_MODEL: str = "google/gemma-3n-e2b-it"
+    NVIDIA_DOCUMENT_MODEL: str = "google/gemma-3n-e2b-it"
 
-# --- SaaS Services ---
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+    # Ollama (Local)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:7b"
+    OLLAMA_BACKUP_MODEL: str = "llama3.1:8b"
+    OLLAMA_TIMEOUT_SECONDS: int = 120
 
-# --- Twilio Configuration ---
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_PHONE_NUMBER = os.environ.get(
-    "TWILIO_PHONE_NUMBER",
-    os.environ.get("TWILIO_FROM_NUMBER", ""),
-)
-TWILIO_SMS_NUMBER = os.environ.get("TWILIO_SMS_NUMBER", TWILIO_PHONE_NUMBER)
-TWILIO_VOICE_NAME = os.environ.get("TWILIO_VOICE_NAME", "Polly.Joanna")
+    # OpenAI (Direct)
+    OPENAI_API_KEY: str = Field(default="")
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = "gpt-4o-mini"
 
-# --- Logo ---
-LOGO_PATH = os.path.join(BASE_DIR, "assets", "jurisai_logo.png")
-os.makedirs(os.path.join(BASE_DIR, "assets"), exist_ok=True)
+    # ─── Embeddings ──────────────────────────────────────────────────────────
+    EMBEDDING_MODEL: str = "BAAI/bge-large-en-v1.5"
+    EMBEDDING_DIMENSION: int = 1024
+    EMBEDDING_BATCH_SIZE: int = 32
+    EMBEDDING_DEVICE: str = "cpu"  # cpu, cuda, mps
+    EMBEDDING_LOCAL_FILES_ONLY: bool = False
 
-# --- File Upload ---
-MAX_FILE_SIZE_MB = 20
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".rtf", ".jpg", ".jpeg", ".png"}
+    # ─── Vector Store (ChromaDB) ────────────────────────────────────────────
+    CHROMA_COLLECTION: str = "legal_documents"
+    CHROMA_HNSW_SPACE: str = "cosine"
+    CHROMA_HNSW_M: int = 16
+    CHROMA_HNSW_EF_CONSTRUCTION: int = 200
+    CHROMA_HNSW_EF_SEARCH: int = 100
+
+    # ─── RAG Pipeline ───────────────────────────────────────────────────────
+    RAG_CHUNK_SIZE: int = 512
+    RAG_CHUNK_OVERLAP: int = 50
+    RAG_CHUNK_MIN_SIZE: int = 100
+    RAG_SIMILARITY_THRESHOLD: float = 0.35
+    RAG_TOP_K: int = 10
+    RAG_RERANK_TOP_K: int = 5
+    RAG_HYBRID_ALPHA: float = 0.5  # 0 = BM25 only, 1 = Dense only
+    RAG_MAX_CONTEXT_TOKENS: int = 8000
+    RAG_QUERY_EXPANSION: bool = True
+    RAG_USE_HYPOTHETICAL_DOCS: bool = True
+
+    # Cross-Encoder Reranking
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RERANKER_BATCH_SIZE: int = 16
+    RERANKER_ENABLED: bool = True
+
+    # ─── Scrapling Web Research ─────────────────────────────────────────────
+    SCRAPLING_FETCH_TIMEOUT: int = 15
+    SCRAPLING_MAX_CONTENT_LENGTH: int = 5000
+    SCRAPLING_RESULTS_PER_QUERY: int = 5
+
+    # ─── Legal Data Ingestion ───────────────────────────────────────────────
+    INGEST_BATCH_SIZE: int = 256
+    INGEST_MAX_WORKERS: int = 4
+    INGEST_AUTO_ON_STARTUP: bool = True
+
+    # ─── Email (Resend) ─────────────────────────────────────────────────────
+    RESEND_API_KEY: str = Field(default="")
+    EMAIL_FROM: str = "noreply@jurisai.legal"
+    EMAIL_FROM_NAME: str = "JurisAI"
+
+    # ─── File Upload ────────────────────────────────────────────────────────
+    MAX_FILE_SIZE_MB: int = 20
+    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".docx", ".txt", ".md", ".rtf", ".jpg", ".jpeg", ".png"]
+
+    # ─── Redis (Caching, Rate Limiting, Sessions) ───────────────────────────
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_SOCKET_TIMEOUT: int = 5
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = 5
+
+    # ─── Celery (Background Workers) ────────────────────────────────────────
+    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_RESULT_SERIALIZER: str = "json"
+    CELERY_ACCEPT_CONTENT: List[str] = ["json"]
+    CELERY_TIMEZONE: str = "UTC"
+    CELERY_TASK_TRACK_STARTED: bool = True
+    CELERY_TASK_TIME_LIMIT: int = 300
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
+
+    # ─── Monitoring & Observability ────────────────────────────────────────
+    OTEL_ENABLED: bool = True
+    OTEL_SERVICE_NAME: str = "jurisai-api"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
+    OTEL_EXPORTER_OTLP_HEADERS: str = ""
+    LOG_FORMAT: str = "json"  # json or console
+
+    # ─── Feature Flags ──────────────────────────────────────────────────────
+    FEATURE_NEURAL_AUDIT: bool = False
+    FEATURE_DRAFT_GENERATION: bool = True
+    FEATURE_CASE_MANAGEMENT: bool = True
+    FEATURE_LAWYER_DIRECTORY: bool = True
+    FEATURE_CLIENT_PORTAL: bool = True
+    FEATURE_ANALYTICS: bool = True
+    FEATURE_WEB_RESEARCH: bool = True
+
+    # ─── Bootstrap Admin (Optional) ────────────────────────────────────────
+    ENABLE_BOOTSTRAP_ADMIN: bool = False
+    DEFAULT_ADMIN_EMAIL: str = Field(default="")
+    DEFAULT_ADMIN_PASSWORD: str = Field(default="", min_length=10)
+    DEFAULT_ADMIN_FIRM_ID: str = "JA-DEFAULT"
+    DEFAULT_ADMIN_FIRM_NAME: str = "JurisAI Legal"
+
+    # ─── Legal Paper Analysis ──────────────────────────────────────────────
+    LEGAL_PAPER_ENABLE_NEURAL_AUDIT: bool = False
+    LEGAL_PAPER_NEURAL_TIMEOUT_SECONDS: int = 60
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

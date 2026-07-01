@@ -8,68 +8,116 @@
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](backend/)
 [![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)](src/)
 [![AI](https://img.shields.io/badge/AI-NVIDIA%20Gemma--3n-76b900.svg)]()
-[![Python](https://img.shields.io/badge/Python-3.10+-3776ab.svg)](backend/requirements.txt)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776ab.svg)](backend/requirements.txt)
 [![Node](https://img.shields.io/badge/Node.js-18+-339933.svg)](package.json)
 
 </div>
 
 ---
 
-JurisAI is a full-stack legal research and document analysis platform that combines RAG (Retrieval-Augmented Generation) with a modern web interface. It ingests Indian legal datasets — Supreme Court judgments, IPC/CrPC sections, and landmark cases — into a vector store for intelligent semantic search and AI-powered analysis.
+JurisAI is a full-stack legal intelligence platform that combines AI-powered document drafting, semantic legal research, and case management in a modern web interface. Built for Indian legal practice with support for NVIDIA Gemma-3n, local LLMs (Ollama), and Scrapling-powered web research.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/landing.png" alt="Landing Page" width="400"/></td>
+    <td><img src="docs/login.png" alt="Login" width="400"/></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Editorial landing page</em></td>
+    <td align="center"><em>Login with animated characters</em></td>
+  </tr>
+  <tr>
+    <td><img src="docs/track.png" alt="Case Tracking" width="400"/></td>
+    <td><img src="docs/404.png" alt="404 Page" width="400"/></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Public case tracking portal</em></td>
+    <td align="center"><em>Custom 404 page</em></td>
+  </tr>
+</table>
 
 ## Features
 
-- **Neural Document Audit** — Deep analysis of legal documents using NVIDIA Gemma-3n
-- **RAG Research Engine** — Semantic search across Supreme Court judgments, IPC, and CrPC datasets
-- **Contract Analyzer** — AI-driven contract review with risk identification
-- **Draft Generator** — Automated legal document drafting
-- **Case Dashboard** — Track and manage cases with analytics
-- **Lawyer Directory** — Browse and connect with legal professionals
-- **Client Portal** — Public case tracking for clients (`/track`)
-- **Admin Panel** — User management, analytics, and system oversight
+- **🧠 AI Draft Generator** — Describe what you need in plain language. AI understands intent, selects the right template, modifies clauses, and generates polished legal drafts. Supports **bulk generation** — draft 50+ notices/agreements from a single intent with batch PDF download.
+- **🔬 RAG Research Engine** — Semantic search across Supreme Court judgments, IPC, CrPC, and Indian legal datasets via ChromaDB vector store.
+- **📄 Contract Analyzer** — Upload contracts for AI-powered clause extraction, risk flagging, and compliance checks.
+- **📋 Case Management** — Full case dashboard with stages, hearings, daily updates, notes, and activity logs.
+- **👥 Lawyer Directory** — Browse and connect with legal professionals within the firm.
+- **🔗 Client Portal** — Public case tracking (`/track`) with real-time status, journey maps, and hearing schedules.
+- **📊 Analytics & Insights** — Firm-wide metrics, case velocity, and trend analysis.
+- **⚙️ Admin Panel** — User management, system oversight, and configuration.
 
 ## Architecture
 
 ```
 legalai/
-├── backend/                 # FastAPI server
-│   ├── ai/                  # RAG pipeline, embeddings, vector store
-│   ├── api/routes/          # API route handlers (auth, research, contracts, etc.)
-│   ├── services/            # Business logic (auth, email, AI gateway, Twilio)
-│   ├── database/            # Database schemas and initialization
-│   ├── legal_data/          # Ingested legal documents (git-ignored)
-│   ├── chroma_db/           # Vector store (git-ignored)
-│   ├── uploads/             # User uploads (git-ignored)
-│   ├── main.py              # Application entrypoint
-│   ├── config.py            # Centralized configuration
-│   └── requirements.txt     # Python dependencies
-├── src/                     # React + Vite frontend
-│   ├── components/          # Reusable UI components
-│   │   ├── ui/              # Design system (buttons, cards, inputs)
-│   │   ├── layout/          # Navbar, Footer, AppLayout
-│   │   ├── landing/         # Landing page sections
-│   │   └── editorial/       # Editorial landing components
-│   ├── pages/               # Route-level page components
-│   ├── lib/                 # API client, utilities, design tokens
-│   ├── config.js            # Frontend configuration
-│   ├── App.jsx              # Root component with routing
-│   └── main.jsx             # Entry point
-├── scripts/                 # Automation scripts (data download, setup)
-├── tests/                   # Backend test suites
-├── datasets/                # Legal reference data (git-ignored, generate locally)
-├── docs/                    # Documentation
-├── docker-compose.yml       # Multi-service orchestration
-├── vite.config.js           # Vite + Tailwind configuration
-└── package.json             # Frontend dependencies
+├── backend/                          # FastAPI Python server
+│   ├── ai/                           # RAG pipeline, embeddings, LLM integration
+│   ├── api/routes/                   # Route handlers
+│   │   ├── auth.py                   # Login, register, token refresh
+│   │   ├── drafts.py                 # Single & bulk draft generation, intent analysis
+│   │   ├── lawyers.py                # Case CRUD, hearings, notes, daily updates
+│   │   ├── research.py               # Legal search & research
+│   │   └── ...
+│   ├── services/                     # Business logic layer
+│   │   ├── draft_service.py          # Template engine, PDF generation, bulk ZIP
+│   │   ├── intent_service.py         # AI intent parser & template suggestion
+│   │   ├── scrapling_research_service.py  # Web research via Scrapling
+│   │   ├── ai_gateway.py             # Unified AI provider interface
+│   │   ├── email_service.py          # Gmail/Resend email delivery
+│   │   └── ...
+│   ├── database/                     # Pydantic schemas, DB init
+│   ├── main.py                       # FastAPI app entrypoint
+│   └── config.py                     # Centralized env-based config
+├── src/                              # React + Vite frontend
+│   ├── pages/                        # Route-level page components
+│   │   ├── DraftGenerator.jsx        # Intent-driven bulk draft generator
+│   │   ├── LandingPage.tsx           # Editorial landing with GSAP animations
+│   │   ├── LegalResearch.jsx         # Research + embedded draft flow
+│   │   ├── CaseDashboard.tsx         # Case management dashboard
+│   │   ├── ClientPortal.jsx          # Public case tracking
+│   │   └── ...
+│   ├── components/                   # Reusable UI (ui/, layout/, landing/, editorial/)
+│   ├── lib/                          # API client, utilities, design tokens
+│   ├── config.js                     # Frontend API URL config
+│   ├── App.jsx                       # Router with auth guards
+│   └── main.jsx                      # React entry point
+├── scripts/                          # Automation & data ingestion
+├── tests/                            # E2E & unit tests
+├── docs/                             # Screenshots & documentation
+├── .gitignore
+├── docker-compose.yml
+├── package.json
+└── vite.config.js
 ```
+
+## Draft Generator — Intent-Based Bulk Drafting
+
+The Draft Generator (`/draft`) is the platform's flagship feature:
+
+```
+User describes intent (natural language)
+  → AI parses: doc type, parties, tone, bulk vs single
+  → Suggests template modifications & missing clauses
+  → Single mode: fill details → AI generates polished draft
+  → Bulk mode: data grid (add/remove rows, CSV import) → batch generate all → ZIP download
+```
+
+**Supported document types:** Legal Notice, Consumer Complaint, Rental Agreement, Affidavit, Power of Attorney, Legal Opinion
+
+**Tones:** Neutral, Formal, Assertive, Conciliatory, Aggressive
+
+**API:** `POST /api/draft/understand-intent` (intent parsing) + `POST /api/draft/bulk-generate` (batch generation)
 
 ## Getting Started
 
 ### Prerequisites
 
 - **Node.js** 18+
-- **Python** 3.10+
-- **Docker Desktop** (optional, for Firecrawl web research)
+- **Python** 3.11+
+- **NVIDIA API Key** (or Ollama for local LLM)
 
 ### 1. Clone & Install
 
@@ -94,107 +142,72 @@ cd ..
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env with your API keys (NVIDIA, Twilio, Resend, Supabase, etc.)
+# Edit .env with your API keys (NVIDIA, Supabase, JWT secret, etc.)
 cd ..
 ```
 
 ### 3. Run
 
 ```powershell
-# Start everything (frontend + backend)
-npm run dev:full
+# Frontend only
+npm run dev              # http://localhost:5173
 
-# Or start separately:
-npm run dev              # Frontend on http://localhost:5173
-cd backend && python main.py  # Backend on http://localhost:8000
+# Backend (separate terminal)
+cd backend
+python main.py           # http://localhost:8000
 ```
 
-### 4. Docker (Optional)
+### 4. E2E Tests
 
 ```bash
-# Backend + Frontend only
-docker compose up backend frontend
+# Headless mode (Playwright)
+python tests/test_e2e_playwright.py
 
-# With Ollama (local LLM)
-docker compose --profile ai up
-
-# Full stack
-docker compose --profile ai --profile api --profile web up
+# Headed mode (watch browser)
+python tests/test_e2e_live.py
 ```
-
-## API Endpoints
-
-| Route | Description |
-|-------|-------------|
-| `GET /` | Health check |
-| `GET /docs` | Swagger UI |
-| `POST /api/auth/login` | User login |
-| `POST /api/auth/register` | User registration |
-| `GET /api/research/search` | Semantic legal search |
-| `POST /api/contracts/analyze` | Contract analysis |
-| `POST /api/drafts/generate` | Legal draft generation |
-| `GET /api/cases` | Case management |
-| `GET /api/lawyers` | Lawyer directory |
-| `GET /api/analytics` | Platform analytics |
-
-Full API documentation available at `http://localhost:8000/docs` when the server is running.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19, Vite 7, Tailwind CSS 4, React Router 7 |
-| Backend | FastAPI, Uvicorn, SQLAlchemy |
+| Frontend | React 19, Vite 7, Tailwind CSS 4, React Router 7, Framer Motion |
+| Backend | FastAPI, Uvicorn, SQLAlchemy, ReportLab (PDF) |
 | AI/ML | NVIDIA Gemma-3n, Ollama (local), ChromaDB, sentence-transformers |
-| Database | Supabase (PostgreSQL), SQLite (legacy) |
+| Database | Supabase (PostgreSQL) |
 | Auth | JWT (python-jose), bcrypt |
-| Services | Resend (email), Twilio (voice/SMS), Firecrawl (web scraping) |
-| Infra | Docker Compose, PowerShell scripts |
+| Web Research | Scrapling (replaces Firecrawl) |
+| Email | Resend, Gmail SMTP |
+| Infra | Docker Compose |
 
 ## Environment Variables
 
-See [`backend/.env.example`](backend/.env.example) for all configuration options. Key variables:
+See [`backend/.env.example`](backend/.env.example) for the full configuration reference.
 
 | Variable | Description |
 |----------|-------------|
-| `NVIDIA_API_KEY` | NVIDIA API key for Gemma-3n |
+| `NVIDIA_API_KEY` | NVIDIA API key for Gemma-3n inference |
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Supabase anon/service key |
-| `JWT_SECRET` | JWT signing secret |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID |
-| `RESEND_API_KEY` | Resend email API key |
-| `OLLAMA_MODEL` | Local LLM model name |
-
-## Datasets
-
-Legal data is not committed to the repository. Use the scripts in `scripts/` to generate datasets locally:
-
-```bash
-python scripts/download_court_cases.py
-python scripts/download_bare_acts.py
-python scripts/download_hf_datasets.py
-python scripts/generate_contracts.py
-```
-
-Place generated data in `backend/legal_data/` for RAG ingestion. The system auto-ingests on first startup if the vector store is empty.
+| `SUPABASE_KEY` | Supabase anon/service role key |
+| `JWT_SECRET` | JWT signing secret (change in production) |
+| `RESEND_API_KEY` | Resend transactional email API key |
+| `OLLAMA_MODEL` | Local LLM model name (fallback) |
+| `SCRAPLING_FETCH_TIMEOUT` | Web research fetch timeout (seconds) |
 
 ## Security
 
-- **Never commit `.env` files** — use `.env.example` as a template
-- All secrets are loaded from environment variables
+- **Never commit `.env` files** — `.env.example` is the safe template
+- All secrets loaded from environment variables at runtime
 - JWT-based authentication with bcrypt password hashing
-- CORS configured for local development only
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+- CORS restricted in production configuration
+- `backend/.env` is git-ignored via `.gitignore`
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
-  Built for the legal community
+  Built for the legal community • 2026
 </div>

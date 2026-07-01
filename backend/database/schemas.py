@@ -221,6 +221,56 @@ class DraftClauseNote(BaseModel):
     rationale: str
 
 
+class IntentRequest(BaseModel):
+    description: str
+    firm_name: str = ""
+
+
+class IntentResponse(BaseModel):
+    suggested_doc_type: str
+    confidence: float
+    reasoning: str
+    is_bulk: bool
+    bulk_entity_label: str = ""
+    extracted_variables: dict[str, str] = Field(default_factory=dict)
+    extracted_parties: list[str] = Field(default_factory=list)
+    suggested_tone: str = "Neutral"
+    missing_info_questions: list[str] = Field(default_factory=list)
+    suggested_clauses: list[str] = Field(default_factory=list)
+    template_modifications: list[str] = Field(default_factory=list)
+
+
+class BulkEntry(BaseModel):
+    client_name: str
+    opposing_party: str = ""
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
+class BulkGenerateRequest(BaseModel):
+    doc_type: str
+    entries: List[BulkEntry]
+    case_description: str
+    firm_name: str = ""
+    tone: str = "Neutral"
+    template_modifications: list[str] = Field(default_factory=list)
+
+
+class BulkDraftItem(BaseModel):
+    index: int
+    client_name: str
+    draft_id: str
+    preview_text: str
+    download_url: str
+
+
+class BulkGenerateResponse(BaseModel):
+    batch_id: str
+    total: int
+    successful: int
+    drafts: List[BulkDraftItem]
+    zip_download_url: str = ""
+
+
 class DraftResponse(BaseModel):
     draft_id: str
     preview_text: str

@@ -81,11 +81,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token =
-    localStorage.getItem("token") ||
-    localStorage.getItem("jurisai_token") ||
-    sessionStorage.getItem("token") ||
-    sessionStorage.getItem("jurisai_token");
+  const token = localStorage.getItem("jurisai_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -101,8 +97,7 @@ export const casesAPI = {
   updateStage: (id: number, stage: Stage) => api.put(`/lawyers/cases/${id}/stage`, { new_stage: stage }),
   addHearing: (id: number, data: { date: string; time?: string; court?: string; hearing_type?: string; notes?: string }) =>
     api.post(`/lawyers/cases/${id}/hearings`, data),
-  remindClient: (caseId: number, hearingId: number) =>
-    api.post(`/lawyers/cases/${caseId}/hearings/${hearingId}/remind-client-twilio`),
+
   addNote: (id: number, data: { note_type: string; content: string }) => api.post(`/lawyers/cases/${id}/notes`, data),
   dailyUpdate: (id: number, data: { summary: string; research_notes?: string; hours_logged?: number }) =>
     api.put(`/lawyers/cases/${id}/daily-update`, data),

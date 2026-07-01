@@ -7,7 +7,7 @@ import string
 from database.db import supabase
 from api.routes.auth import get_current_user
 from api.routes.notifications import create_notification
-from config import TWILIO_SMS_NUMBER
+
 import json
 import logging
 import hashlib
@@ -184,13 +184,6 @@ def _has_activity_for_hearing(activity_log, hearing_id, action):
     return False
 
 
-def _has_auto_call_for_hearing(activity_log, hearing_id):
-    return _has_activity_for_hearing(activity_log, hearing_id, "auto_voice_reminder_sent")
-
-
-def _has_auto_sms_for_hearing(activity_log, hearing_id):
-    return _has_activity_for_hearing(activity_log, hearing_id, "auto_sms_reminder_sent")
-
 def _compute_urgency(case_row):
     """Smart prioritization: auto-flag urgent/inactive."""
     flags = []
@@ -301,89 +294,6 @@ def _seeded_pick(seed: str, options: list, count: int = 1):
 def _build_phone(seed: str) -> str:
     digits = str(_seed_value(seed, 9000000000) + 1000000000)
     return f"+91 {digits[:5]} {digits[5:]}"
-
-
-def run_auto_hearing_call_reminders():
-    """Background worker: auto-call clients for hearings due within two days."""
-    try:
-        res = supabase.table("lawyer_cases").select("*").execute()
-    except Exception as e:
-        logger.error(f"Auto-call scan failed to fetch cases: {e}")
-        return
-
-    today = date.today()
-
-    for case in (res.data or []):
-        enriched = _enrich_case(case)
-        client_phone = enriched.get("client_number") or ""
-        hearings = enriched.get("hearings", [])
-        activity_log = enriched.get("activity_log", [])
-
-        if not client_phone or not hearings:
-            continue
-
-        for hearing in hearings:
-            hearing_id = hearing.get("id")
-            hearing_date = hearing.get("date")
-            if not hearing_id or not hearing_date:
-                continue
-
-            try:
-                scheduled_for = datetime.fromisoformat(hearing_date).date()
-            except Exception:
-                continue
-
-            days_until = (scheduled_for - today).days
-            if days_until != 2:
-                continue
-
-            if _has_auto_call_for_hearing(activity_log, hearing_id):
-                continue
-
-            event_payload = {
-                "title": enriched.get("title") or hearing.get("hearing_type") or "upcoming hearing",
-                "court": hearing.get("court") or enriched.get("court") or "",
-                "date": hearing.get("date") or "",
-                "time": hearing.get("time") or "",
-                "client_name": enriched.get("client_name") or "Client",
-            }
-
-            try:
-                from services.twilio_service import send_twilio_reminder
-
-                if TWILIO_SMS_NUMBER and not _has_auto_sms_for_hearing(activity_log, hearing_id):
-                    sms_result = send_twilio_reminder(event_payload, client_phone, mode="sms")
-                    if sms_result.get("success"):
-                        activity_log = _append_activity_entry(
-                            activity_log,
-                            "auto_sms_reminder_sent",
-                            "JurisAI Scheduler",
-                            f"Automatic Twilio SMS reminder sent for hearing #{hearing_id} to {client_phone}",
-                        )
-                    else:
-                        logger.warning(
-                            f"Auto SMS reminder failed for case {case.get('id')} hearing {hearing_id}: {sms_result.get('message')}"
-                        )
-
-                result = send_twilio_reminder(event_payload, client_phone, mode="call")
-                if not result.get("success"):
-                    logger.warning(
-                        f"Auto voice reminder failed for case {case.get('id')} hearing {hearing_id}: {result.get('message')}"
-                    )
-                    continue
-
-                activity_log = _append_activity_entry(
-                    activity_log,
-                    "auto_voice_reminder_sent",
-                    "JurisAI Scheduler",
-                    f"Automatic Twilio voice reminder sent for hearing #{hearing_id} to {client_phone}",
-                )
-                supabase.table("lawyer_cases").update({
-                    "notes": _store_case_meta(case, {"activity_log": activity_log}),
-                    "updated_at": _utcnow_iso()
-                }).eq("id", case.get("id")).execute()
-            except Exception as e:
-                logger.error(f"Auto voice reminder exception for case {case.get('id')} hearing {hearing_id}: {e}")
 
 
 def _summarize_lawyer(row, lawyer_cases):
@@ -699,67 +609,7 @@ async def get_hearings(case_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=GENERIC_CASE_ERROR)
 
 
-@router.post("/cases/{case_id}/hearings/{hearing_id}/remind-client-twilio")
-async def remind_client_twilio_for_hearing(case_id: int, hearing_id: int, user: dict = Depends(get_current_user)):
-    """Place a Twilio voice reminder call for a case hearing using the stored client number."""
-    try:
-        query = supabase.table("lawyer_cases").select("*").eq("id", case_id)
-        if user.get("role") == "admin":
-            firm_id = user.get("firm_id")
-            if firm_id:
-                query = query.eq("firm_id", firm_id)
-        else:
-            query = query.eq("lawyer_email", user.get("email"))
 
-        res = query.execute()
-        if not res.data:
-            raise HTTPException(status_code=404, detail="Case not found")
-
-        case = res.data[0]
-        meta = _extract_case_meta(case)
-        hearings = _parse_json(case.get("hearings"), meta.get("hearings", []))
-        hearing = next((item for item in hearings if str(item.get("id")) == str(hearing_id)), None)
-        if not hearing:
-            raise HTTPException(status_code=404, detail="Hearing not found")
-
-        client_phone = case.get("client_number") or meta.get("client_number") or case.get("client_phone") or ""
-        if not client_phone:
-            raise HTTPException(status_code=400, detail="Client phone number is missing for this case.")
-
-        event_payload = {
-            "title": case.get("title") or hearing.get("hearing_type") or "upcoming hearing",
-            "court": hearing.get("court") or case.get("court") or meta.get("court") or "",
-            "date": hearing.get("date") or "",
-            "time": hearing.get("time") or "",
-            "client_name": case.get("client_name") or meta.get("client_name") or "Client",
-        }
-
-        from services.twilio_service import send_twilio_reminder
-
-        result = send_twilio_reminder(event_payload, client_phone, mode="call")
-        if not result.get("success"):
-            raise HTTPException(status_code=500, detail=result.get("message", "Failed to place Twilio call"))
-
-        activity_log = _parse_json(case.get("activity_log"), meta.get("activity_log", []))
-        activity_log.append({
-            "id": len(activity_log) + 1,
-            "action": "reminder_sent",
-            "actor": user.get("name", "Unknown"),
-            "details": f"Voice reminder call placed to {client_phone} for hearing #{hearing_id}",
-            "timestamp": _utcnow_iso()
-        })
-        supabase.table("lawyer_cases").update({
-            "activity_log": json.dumps(activity_log),
-            "notes": _store_case_meta(case, {"activity_log": activity_log}),
-            "updated_at": _utcnow_iso()
-        }).eq("id", case_id).execute()
-
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Twilio hearing reminder error: {e}")
-        raise HTTPException(status_code=500, detail=GENERIC_CASE_ERROR)
 
 # ──────────────────────────────────────────
 # NOTES (Client calls, documents, internal)

@@ -3,165 +3,14 @@ import re
 import json
 import uuid
 import logging
-from html import unescape
-from urllib.parse import parse_qs, unquote, urlparse
 import pdfplumber
-import requests
 from ai.embeddings import embed_text, embed_batch
 from ai.vector_store import add_documents, search, get_document_count
 from ai.llm_fallback import generate_fallback_response, _internal_deep_processing, _internal_synthesis_engine
 from config import RAG_SIMILARITY_THRESHOLD, RAG_TOP_K, LEGAL_DATA_DIR, OLLAMA_BACKUP_MODEL
 from services.ai_gateway import AIGatewayError, generate_text
-from services.firecrawl_service import firecrawl_scrape, firecrawl_search
 
 logger = logging.getLogger(__name__)
-
-
-# --- Web Search Integration (DuckDuckGo) ---
-def _web_session() -> requests.Session:
-    session = requests.Session()
-    session.trust_env = False
-    session.headers.update(
-        {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-    )
-    return session
-
-
-def _flatten_related_topics(items: list, limit: int) -> list:
-    flattened = []
-    for item in items:
-        if len(flattened) >= limit:
-            break
-        if isinstance(item, dict) and item.get("Text"):
-            flattened.append(item)
-            continue
-        if isinstance(item, dict) and isinstance(item.get("Topics"), list):
-            for nested in item["Topics"]:
-                if isinstance(nested, dict) and nested.get("Text"):
-                    flattened.append(nested)
-                if len(flattened) >= limit:
-                    break
-    return flattened[:limit]
-
-
-def _normalize_result_url(url: str) -> str:
-    if not url:
-        return ""
-    clean = unescape(url.strip())
-    if clean.startswith("//"):
-        clean = f"https:{clean}"
-    parsed = urlparse(clean)
-    if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
-        target = parse_qs(parsed.query).get("uddg", [""])[0]
-        if target:
-            return unquote(target)
-    return clean
-
-
-def _duckduckgo_search(query: str, max_results: int = 5) -> list:
-    """Fast web discovery path used before optional Firecrawl enrichment."""
-    results = []
-    try:
-        session = _web_session()
-        resp = session.get(
-            "https://api.duckduckgo.com/",
-            params={"q": f"{query} Indian law legal", "format": "json", "no_html": 1, "skip_disambig": 1},
-            timeout=10
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            # Abstract
-            if data.get("AbstractText"):
-                results.append({
-                    "title": data.get("Heading", "Legal Reference"),
-                    "snippet": data["AbstractText"][:500],
-                    "source": data.get("AbstractSource", "DuckDuckGo"),
-                    "url": data.get("AbstractURL", "")
-                })
-            # Related topics
-            for topic in _flatten_related_topics(data.get("RelatedTopics", []), max_results):
-                if isinstance(topic, dict) and topic.get("Text"):
-                    results.append({
-                        "title": topic.get("Text", "")[:100],
-                        "snippet": topic.get("Text", "")[:400],
-                        "source": "DuckDuckGo",
-                        "url": _normalize_result_url(topic.get("FirstURL", ""))
-                    })
-    except Exception as e:
-        logger.warning(f"Web search failed: {e}")
-
-    if results:
-        return results[:max_results]
-
-    try:
-        # HTML fallback when instant answers are sparse or unavailable
-        session = _web_session()
-        resp = session.get(
-            "https://html.duckduckgo.com/html/",
-            params={"q": f"{query} Indian law legal"},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            html = resp.text
-            matches = re.findall(
-                r'nofollow" class="result__a" href="(?P<url>[^"]+)">(?P<title>.*?)</a>.*?<a class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
-                html,
-                flags=re.DOTALL,
-            )
-            for url, title, snippet in matches[:max_results]:
-                clean_title = re.sub(r"<.*?>", "", title).strip()
-                clean_snippet = re.sub(r"<.*?>", "", snippet).strip()
-                if clean_title and clean_snippet:
-                    results.append(
-                        {
-                            "title": clean_title[:120],
-                            "snippet": clean_snippet[:500],
-                            "source": "DuckDuckGo",
-                            "url": _normalize_result_url(url),
-                        }
-                    )
-    except Exception as e:
-        logger.warning(f"Web search HTML fallback failed: {e}")
-
-    return results[:max_results]
-
-
-def _web_search(query: str, max_results: int = 5) -> list:
-    """
-    Search the web using fast discovery first, then enrich the top result with
-    Firecrawl when available. This keeps the initial RAG request responsive.
-    """
-    results = _duckduckgo_search(query, max_results=max_results)
-
-    if not results:
-        try:
-            firecrawl_results = firecrawl_search(query, max_results=max_results)
-            if firecrawl_results:
-                logger.info("Firecrawl web search completed: %s results", len(firecrawl_results))
-                return firecrawl_results[:max_results]
-        except Exception as e:
-            logger.warning(f"Firecrawl web search failed: {e}")
-        return []
-
-    try:
-        top_result = results[0]
-        enriched = firecrawl_scrape(top_result.get("url", ""))
-        if enriched:
-            results[0] = {
-                **top_result,
-                "snippet": enriched.get("snippet") or top_result.get("snippet", ""),
-                "source": "Firecrawl",
-                "url": enriched.get("url") or top_result.get("url", ""),
-                "markdown": enriched.get("markdown", ""),
-            }
-            logger.info("Firecrawl enriched top web result for query: %s", query)
-    except Exception as e:
-        logger.warning(f"Firecrawl web enrichment failed: {e}")
-
-    return results[:max_results]
 
 # --- In-memory knowledge stores (loaded once) ---
 _ipc_sections = None
@@ -1055,8 +904,9 @@ def search_legal(query: str) -> dict:
     """
     # 1. Thread Pool Parallelization
     import concurrent.futures
+    from services.scrapling_research_service import web_search
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-    web_future = executor.submit(_web_search, query, 3)
+    web_future = executor.submit(web_search, query, 3)
 
     # 2. Vector search (may fail if embeddings not loaded)
     results = []

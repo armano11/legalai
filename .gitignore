@@ -40,6 +40,9 @@ debug_playwright/
 tmp_*.py
 debug_*.py
 test_draft.pdf
+e2e_screenshots/
+RESTRUCTURING_*
+scratchpad.*
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data & Database (too large for git)

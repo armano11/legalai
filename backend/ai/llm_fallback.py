@@ -4,7 +4,9 @@ import logging
 import requests
 import time
 
-from config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_BACKUP_MODEL, APP_CORE_TOKEN
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_BACKUP_MODEL, APP_CORE_TOKEN
+
+OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/generate"
 
 logger = logging.getLogger(__name__)
 
@@ -501,22 +503,22 @@ def stream_deep_processing(query: str, context: str = None):
 
     from services.ai_gateway import _nvidia_stream, NVIDIA_RESEARCH_MODEL, AI_ENABLE_MANAGED_MODELS
     from ai.rag_pipeline import search_legal
-    from services.firecrawl_service import firecrawl_search
+    from services.scrapling_research_service import scrapling_web_search
 
     # Multi-source data fetch (non-blocking, but sequential for simplicity)
     yield f"## Starting Perplexity-Style Research Pipeline\\n"
     yield "🔍 Query: **" + query + "**\\n\\n"
 
-    # Stage 1: Firecrawl web
-    web_results = firecrawl_search(query, 3)
-    yield "**Stage 1: Live Web Search** (Firecrawl)\\n"
+    # Stage 1: Scrapling web research
+    web_results = scrapling_web_search(query, 3)
+    yield "**Stage 1: Live Web Research** (Scrapling)\\n"
     if web_results:
         for r in web_results:
             yield f"- [{r['title']}]({r['url']})\\n"
         web_ctx = '\\n'.join([r['snippet'] for r in web_results])
     else:
         web_ctx = 'No live web results.'
-        yield "- No live web sources found (Docker Firecrawl ready)\\n"
+        yield "- No live web sources found\\n"
     yield "\\n"
 
     # Stage 2: RAG database
@@ -592,3 +594,44 @@ def _yield_markdown_chunks(text: str, chunk_size: int = 260):
         for i in range(0, len(line), chunk_size):
             yield line[i:i + chunk_size] + ("\n\n" if i + chunk_size >= len(line) else "")
             time.sleep(0.01)
+
+
+def generate_contract_analysis(text: str) -> dict:
+    """Generate AI-powered contract analysis with risk detections."""
+    prompt = f"""Analyze this legal contract text and provide:
+1. Risk detections (specific clauses with risk levels)
+2. An audit summary
+3. Missing critical clauses
+4. A fairness score (0-100)
+
+Contract text:
+{text[:3000]}
+
+Respond ONLY with valid JSON:
+{{
+  "risk_detections": [
+    {{"clause": "clause text", "risk_level": "high/medium/low", "issue": "description", "recommendation": "fix"}}
+  ],
+  "audit_summary": "2-3 sentence summary",
+  "missing_critical_clauses": ["clause 1", "clause 2"],
+  "fairness_score": 50
+}}"""
+
+    result = _call_neural_node(prompt, max_tokens=2000)
+    if result:
+        parsed = _try_parse_json(result)
+        if parsed:
+            return parsed
+
+    result = _call_ollama(prompt, max_tokens=1500, model_name=OLLAMA_MODEL)
+    if result:
+        parsed = _try_parse_json(result)
+        if parsed:
+            return parsed
+
+    return {
+        "risk_detections": [],
+        "audit_summary": "AI analysis unavailable. Using keyword-based analysis only.",
+        "missing_critical_clauses": [],
+        "fairness_score": 50,
+    }
